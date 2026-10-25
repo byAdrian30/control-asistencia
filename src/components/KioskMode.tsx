@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, UserCheck, KeyRound, Play, Square, Check, Clock, Sparkles } from 'lucide-react';
 import { Employee, Attendance, Schedule } from '@/types/database';
 import PunchModal from './PunchModal';
@@ -46,7 +46,10 @@ export default function KioskMode({
   });
 
   // Mapear horarios de hoy (0 = Domingo, 1 = Lunes, ...)
-  const currentDayOfWeek = new Date().getDay();
+  const [currentDayOfWeek, setCurrentDayOfWeek] = useState(1);
+  useEffect(() => {
+    setCurrentDayOfWeek(new Date().getDay());
+  }, []);
   const todaySchedulesMap = new Map<string, Schedule>();
   schedules
     .filter((s) => s.day_of_week === currentDayOfWeek && s.is_active)

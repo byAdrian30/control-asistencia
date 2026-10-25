@@ -3,6 +3,7 @@
  */
 
 const DEVICE_ID_KEY = 'shimaya_attendance_device_uuid_v1';
+const BOUND_EMPLOYEE_KEY = 'shimaya_bound_employee_id_v1';
 
 export function getOrCreateDeviceId(): string {
   if (typeof window === 'undefined') return 'server-env';
@@ -18,8 +19,23 @@ export function getOrCreateDeviceId(): string {
   return deviceId;
 }
 
+export function getStoredBoundEmployeeId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(BOUND_EMPLOYEE_KEY);
+}
+
+export function setStoredBoundEmployeeId(employeeId: string): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(BOUND_EMPLOYEE_KEY, employeeId);
+}
+
+export function clearStoredBoundEmployeeId(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(BOUND_EMPLOYEE_KEY);
+}
+
 /**
- * Detecta un nombre amigable del teléfono (ej: "iPhone 15 (Safari)", "Samsung Galaxy (Android)")
+ * Detecta un nombre amigable del teléfono (ej: "Apple iPhone 14", "Samsung Galaxy", etc.)
  */
 export function getDeviceDescription(): string {
   if (typeof window === 'undefined') return 'Dispositivo Desconocido';
@@ -54,6 +70,5 @@ export function getDeviceDescription(): string {
   else if (/Firefox/i.test(ua)) browser = 'Firefox';
   else if (/Edge/i.test(ua)) browser = 'Edge';
 
-  const screenRes = `${window.screen.width}x${window.screen.height}`;
-  return `${model} (${browser || 'Navegador'} • ${screenRes})`;
+  return `${model} (${browser || 'Navegador'})`;
 }
