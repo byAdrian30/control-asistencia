@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { Users, Clock, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Employee, Attendance, Schedule, SystemConfig } from '@/types/database';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
@@ -84,14 +85,12 @@ export default function AttendanceHomePage() {
   // Grabar contraseña por primera vez (Permanente)
   const handleRegisterPin = async (employeeId: string, newPin: string): Promise<boolean> => {
     try {
-      // 1. Actualizar estado local
       const updated = employees.map((emp) =>
         emp.id === employeeId ? { ...emp, code: newPin, has_custom_pin: true } : emp
       );
       setEmployees(updated);
       saveLocalEmployees(updated);
 
-      // 2. Si Supabase está conectado, sincronizar en la nube
       if (isConnected && supabase) {
         await supabase
           .from('employees')
@@ -106,7 +105,7 @@ export default function AttendanceHomePage() {
     }
   };
 
-  // Manejador de Marcación (Entrada / Salida)
+  // Manejador de Marcación
   const handlePunch = async (payload: {
     employeeId: string;
     action: 'in' | 'out';
@@ -155,7 +154,6 @@ export default function AttendanceHomePage() {
         return false;
       }
     } else {
-      // Modo Local con persistencia en dispositivo
       if (payload.action === 'in') {
         const newRecord: Attendance = {
           id: `att-${Date.now()}`,
@@ -183,7 +181,6 @@ export default function AttendanceHomePage() {
     }
   };
 
-  // Guardar Empleado desde Admin
   const handleSaveEmployee = async (newEmp: Employee) => {
     const updated = [...employees, newEmp];
     setEmployees(updated);
@@ -207,7 +204,6 @@ export default function AttendanceHomePage() {
     }
   };
 
-  // Eliminar Empleado
   const handleDeleteEmployee = async (id: string) => {
     const updated = employees.filter((e) => e.id !== id);
     setEmployees(updated);
@@ -222,7 +218,6 @@ export default function AttendanceHomePage() {
     }
   };
 
-  // Guardar Horario
   const handleSaveSchedule = async (sch: Schedule) => {
     const filtered = schedules.filter(
       (s) => !(s.employee_id === sch.employee_id && s.day_of_week === sch.day_of_week)
@@ -285,6 +280,11 @@ export default function AttendanceHomePage() {
     }
   };
 
+  // Contadores para métricas
+  const workingNowCount = attendances.filter((a) => !a.clock_out).length;
+  const completedCount = attendances.filter((a) => a.clock_out).length;
+  const lateCount = attendances.filter((a) => a.minutes_late > 0).length;
+
   if (!isMounted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
@@ -302,22 +302,77 @@ export default function AttendanceHomePage() {
         isSupabaseConnected={isConnected}
         onRefresh={loadData}
         isRefreshing={isRefreshing}
+        activeCount={workingNowCount}
+        totalCount={employees.length}
       />
 
-      <main className="flex-1 max-w-md w-full mx-auto p-3 sm:p-4 flex flex-col gap-4 pb-12">
-        <section aria-label="Terminal de Marcación">
-          <KioskMode
-            employees={employees}
-            attendances={attendances}
-            schedules={schedules}
-            onPunch={handlePunch}
-            onRegisterPin={handleRegisterPin}
-          />
-        </section>
+      {/* Contenedor Responsivo: En móvil es una sola columna vertical, en PC se expande a 2 columnas */}
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-5 lg:p-6 pb-12">
+        {/* Barra de Resumen en PC */}
+        <div className="hidden lg:grid grid-cols-4 gap-4 mb-6">
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
+            <div>
+              <p className="text-xs text-slate-400 font-medium">Personal Registrado</p>
+              <p className="text-2xl font-black text-white">{employees.length}</p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
+              <Users className="w-5 h-5" />
+            </div>
+          </div>
 
-        <section aria-label="Historial del Día">
-          <TodayFeed attendances={attendances} employees={employees} />
-        </section>
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
+            <div>
+              <p className="text-xs text-slate-400 font-medium">En Tienda Ahora</p>
+              <p className="text-2xl font-black text-emerald-400">{workingNowCount}</p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+              <Clock className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
+            <div>
+              <p className="text-xs text-slate-400 font-medium">Jornadas Terminadas</p>
+              <p className="text-2xl font-black text-slate-200">{completedCount}</p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
+            <div>
+              <p className="text-xs text-slate-400 font-medium">Tardanzas Detectadas</p>
+              <p className={`text-2xl font-black ${lateCount > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                {lateCount}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Layout Grid: En móvil es flex-col; en Desktop se divide 8 / 4 */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
+          {/* Columna Principal: Terminal de Marcaciones */}
+          <section className="lg:col-span-8 w-full" aria-label="Terminal de Marcación">
+            <KioskMode
+              employees={employees}
+              attendances={attendances}
+              schedules={schedules}
+              onPunch={handlePunch}
+              onRegisterPin={handleRegisterPin}
+            />
+          </section>
+
+          {/* Columna Lateral (Desktop) o Inferior (Móvil): Movimientos de Hoy */}
+          <section className="lg:col-span-4 w-full" aria-label="Historial del Día">
+            <div className="lg:sticky lg:top-24">
+              <TodayFeed attendances={attendances} employees={employees} />
+            </div>
+          </section>
+        </div>
       </main>
 
       <AdminModal
