@@ -1,8 +1,10 @@
 export interface Employee {
   id: string;
   name: string;
-  code: string; // PIN de 4 dígitos o código de empleado
+  code: string; // PIN de 4 dígitos (vacío si es primera vez)
+  has_custom_pin: boolean; // false si aún no ha grabado su contraseña
   role: string;
+  area: 'Cocina' | 'Salón';
   avatar_color?: string;
   active: boolean;
   created_at?: string;
@@ -17,7 +19,6 @@ export interface Attendance {
   minutes_late: number;
   notes?: string | null;
   created_at?: string;
-  // Join helper
   employee?: Employee;
 }
 
@@ -25,8 +26,8 @@ export interface Schedule {
   id: string;
   employee_id: string;
   day_of_week: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
-  start_time: string; // '09:00'
-  end_time: string; // '18:00'
+  start_time: string; // '11:00'
+  end_time: string; // '23:00'
   tolerance_minutes: number;
   is_active: boolean;
 }
@@ -36,13 +37,6 @@ export interface SystemConfig {
   admin_pin: string;
   telegram_bot_token: string;
   telegram_chat_id: string;
-  auto_checkout_hour: number; // Por defecto 1 (1:00 AM)
-  timezone_offset: number; // UTC-5 por defecto para Perú/Colombia
-}
-
-export interface AttendanceSummary {
-  employee: Employee;
-  todayAttendance: Attendance | null;
-  status: 'presente' | 'ausente' | 'jornada_terminada';
-  hoursWorkedToday?: string;
+  auto_checkout_hour: number; // 1:00 AM
+  timezone_offset: number; // -5 (Perú)
 }

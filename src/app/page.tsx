@@ -35,7 +35,6 @@ export default function AttendanceHomePage() {
 
     if (isConnected && supabase) {
       try {
-        // Cargar empleados desde Supabase
         const { data: emps, error: empErr } = await supabase
           .from('employees')
           .select('*')
@@ -46,7 +45,6 @@ export default function AttendanceHomePage() {
           setEmployees(getLocalEmployees());
         }
 
-        // Cargar asistencias de hoy desde Supabase
         const now = new Date();
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
         const { data: atts } = await supabase
@@ -57,7 +55,6 @@ export default function AttendanceHomePage() {
           setAttendances(atts);
         }
 
-        // Cargar horarios desde Supabase
         const { data: schs } = await supabase.from('schedules').select('*');
         if (schs && schs.length > 0) {
           setSchedules(schs);
@@ -65,13 +62,11 @@ export default function AttendanceHomePage() {
           setSchedules(getLocalSchedules());
         }
       } catch {
-        // Fallback a almacenamiento local
         setEmployees(getLocalEmployees());
         setAttendances(getLocalAttendance());
         setSchedules(getLocalSchedules());
       }
     } else {
-      // Modo Local / Demo
       setEmployees(getLocalEmployees());
       setAttendances(getLocalAttendance());
       setSchedules(getLocalSchedules());
@@ -86,6 +81,31 @@ export default function AttendanceHomePage() {
     loadData();
   }, [loadData]);
 
+  // Grabar contraseña por primera vez (Permanente)
+  const handleRegisterPin = async (employeeId: string, newPin: string): Promise<boolean> => {
+    try {
+      // 1. Actualizar estado local
+      const updated = employees.map((emp) =>
+        emp.id === employeeId ? { ...emp, code: newPin, has_custom_pin: true } : emp
+      );
+      setEmployees(updated);
+      saveLocalEmployees(updated);
+
+      // 2. Si Supabase está conectado, sincronizar en la nube
+      if (isConnected && supabase) {
+        await supabase
+          .from('employees')
+          .update({ code: newPin, has_custom_pin: true })
+          .eq('id', employeeId);
+      }
+
+      return true;
+    } catch (err) {
+      console.error('Error registrando PIN:', err);
+      return false;
+    }
+  };
+
   // Manejador de Marcación (Entrada / Salida)
   const handlePunch = async (payload: {
     employeeId: string;
@@ -99,7 +119,6 @@ export default function AttendanceHomePage() {
     if (isConnected && supabase) {
       try {
         if (payload.action === 'in') {
-          // Registrar Entrada en Supabase
           const { data, error } = await supabase
             .from('attendance')
             .insert({
@@ -111,16 +130,9 @@ export default function AttendanceHomePage() {
             .select()
             .single();
 
-          if (error) {
-            console.error('Error insertando asistencia en Supabase:', error);
-            return false;
-          }
-
-          if (data) {
-            setAttendances((prev) => [data, ...prev]);
-          }
+          if (error) return false;
+          if (data) setAttendances((prev) => [data, ...prev]);
         } else {
-          // Registrar Salida en Supabase
           const attId = payload.attendanceId;
           if (!attId) return false;
 
@@ -131,10 +143,7 @@ export default function AttendanceHomePage() {
             })
             .eq('id', attId);
 
-          if (error) {
-            console.error('Error actualizando salida en Supabase:', error);
-            return false;
-          }
+          if (error) return false;
 
           setAttendances((prev) =>
             prev.map((a) => (a.id === attId ? { ...a, clock_out: nowIso } : a))
@@ -142,11 +151,11 @@ export default function AttendanceHomePage() {
         }
         return true;
       } catch (err) {
-        console.error('Error en marcación Supabase:', err);
+        console.error('Error en marcación:', err);
         return false;
       }
     } else {
-      // Modo Local / Demo con LocalStorage
+      // Modo Local con persistencia en dispositivo
       if (payload.action === 'in') {
         const newRecord: Attendance = {
           id: `att-${Date.now()}`,
@@ -174,7 +183,7 @@ export default function AttendanceHomePage() {
     }
   };
 
-  // Guardar Empleado
+  // Guardar Empleado desde Admin
   const handleSaveEmployee = async (newEmp: Employee) => {
     const updated = [...employees, newEmp];
     setEmployees(updated);
@@ -183,9 +192,12 @@ export default function AttendanceHomePage() {
     if (isConnected && supabase) {
       try {
         await supabase.from('employees').upsert({
+          id: newEmp.id,
           name: newEmp.name,
-          code: newEmpCodeClean(newEmp.code),
+          code: newEmp.code,
+          has_custom_pin: newEmp.has_custom_pin,
           role: newEmp.role,
+          area: newEmp.area,
           avatar_color: newEmp.avatar_color,
           active: newEmp.active,
         });
@@ -194,8 +206,6 @@ export default function AttendanceHomePage() {
       }
     }
   };
-
-  const newEmpCodeClean = (code: string) => code.trim();
 
   // Eliminar Empleado
   const handleDeleteEmployee = async (id: string) => {
@@ -224,6 +234,7 @@ export default function AttendanceHomePage() {
     if (isConnected && supabase) {
       try {
         await supabase.from('schedules').upsert({
+          id: sch.id,
           employee_id: sch.employee_id,
           day_of_week: sch.day_of_week,
           start_time: sch.start_time,
@@ -237,13 +248,11 @@ export default function AttendanceHomePage() {
     }
   };
 
-  // Guardar Configuración
   const handleSaveConfig = (newConfig: SystemConfig) => {
     setConfig(newConfig);
     saveLocalConfig(newConfig);
   };
 
-  // Disparar Auto-Checkout
   const handleTriggerAutoCheckout = async (): Promise<string> => {
     try {
       const res = await fetch('/api/cron/auto-checkout?manual=1');
@@ -256,7 +265,6 @@ export default function AttendanceHomePage() {
     }
   };
 
-  // Disparar Notificación de Telegram
   const handleTriggerTelegramReport = async (): Promise<string> => {
     try {
       const res = await fetch('/api/cron/telegram-report', {
@@ -288,7 +296,6 @@ export default function AttendanceHomePage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950">
-      {/* Encabezado con Reloj y Estado */}
       <ClockHeader
         storeName={config.store_name}
         onOpenAdmin={() => setIsAdminOpen(true)}
@@ -297,25 +304,22 @@ export default function AttendanceHomePage() {
         isRefreshing={isRefreshing}
       />
 
-      {/* Contenedor Principal (Mobile-First) */}
-      <main className="flex-1 max-w-md w-full mx-auto p-4 flex flex-col gap-5 pb-10">
-        {/* Componente Kiosko / Marcaciones */}
+      <main className="flex-1 max-w-md w-full mx-auto p-3 sm:p-4 flex flex-col gap-4 pb-12">
         <section aria-label="Terminal de Marcación">
           <KioskMode
             employees={employees}
             attendances={attendances}
             schedules={schedules}
             onPunch={handlePunch}
+            onRegisterPin={handleRegisterPin}
           />
         </section>
 
-        {/* Movimientos de Hoy */}
         <section aria-label="Historial del Día">
           <TodayFeed attendances={attendances} employees={employees} />
         </section>
       </main>
 
-      {/* Modal de Administración */}
       <AdminModal
         isOpen={isAdminOpen}
         onClose={() => setIsAdminOpen(false)}
