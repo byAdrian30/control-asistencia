@@ -373,9 +373,17 @@ export default function PersonalDeviceKiosk({
 
           {/* Errores */}
           {gpsError && (
-            <div className="p-3 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-2">
+            <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <p>{gpsError}</p>
+              <div className="space-y-1.5 flex-1">
+                <p className="font-semibold text-rose-200">{gpsError}</p>
+                {gpsError.includes('candado') && (
+                  <div className="text-[11px] text-amber-200 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 leading-relaxed">
+                    📱 <strong>En Android (Chrome):</strong> Toca el 🔒 al lado de la barra de dirección &gt; Permisos &gt; Ubicación &gt; Activar.<br />
+                    🍎 <strong>En iPhone (Safari):</strong> Toca <strong>aA</strong> al lado del link &gt; Configuración del sitio web &gt; Ubicación &gt; Permitir.
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

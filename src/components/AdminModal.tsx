@@ -97,6 +97,7 @@ export default function AdminModal({
   const [mallLng, setMallLng] = useState(config.mall_lng || -79.86164);
   const [mallRadius, setMallRadius] = useState(config.radius_meters || 250);
   const [mallName, setMallName] = useState(config.store_location_name || 'Shimaya Ramen - Mall Aventura Chiclayo');
+  const [requireGps, setRequireGps] = useState(config.require_gps ?? true);
   const [calibratingGps, setCalibratingGps] = useState(false);
   const [geoStatusMsg, setGeoStatusMsg] = useState<string | null>(null);
 
@@ -105,6 +106,7 @@ export default function AdminModal({
     if (config.mall_lng) setMallLng(config.mall_lng);
     if (config.radius_meters) setMallRadius(config.radius_meters);
     if (config.store_location_name) setMallName(config.store_location_name);
+    if (config.require_gps !== undefined) setRequireGps(config.require_gps);
   }, [config]);
 
   const MALL_PRESETS = [
@@ -255,6 +257,7 @@ export default function AdminModal({
       mall_lng: Number(mallLng),
       radius_meters: Number(mallRadius),
       store_location_name: mallName,
+      require_gps: requireGps,
     };
     onSaveConfig(newConfig);
     setGeoStatusMsg('Configuración de GPS y Geovalla guardada.');
@@ -610,6 +613,35 @@ export default function AdminModal({
                     <p className="text-[11px] text-slate-300 leading-relaxed">
                       El sistema solo permite marcar cuando el celular del colaborador se encuentra físicamente dentro del radio de <strong>Shimaya Ramen en Mall Aventura</strong>.
                     </p>
+
+                    {/* Interruptor de Geovalla GPS */}
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-700/80">
+                      <div>
+                        <div className="text-white text-xs font-bold flex items-center gap-1.5">
+                          <span>Exigir GPS Obligatorio en Mall Aventura</span>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                              requireGps ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+                            }`}
+                          >
+                            {requireGps ? 'ACTIVADO' : 'DESACTIVADO'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          Si algún colaborador tiene problemas con el sensor de su teléfono bajo techo, puedes desactivar el GPS temporalmente (el celular único sigue validándose).
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={requireGps}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setRequireGps(val);
+                          onSaveConfig({ ...config, require_gps: val });
+                        }}
+                        className="w-5 h-5 accent-emerald-500 rounded cursor-pointer shrink-0 ml-3"
+                      />
+                    </div>
 
                     {/* Presets Rápidos */}
                     <div className="pt-1">

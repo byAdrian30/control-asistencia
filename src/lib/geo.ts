@@ -32,7 +32,10 @@ export function calculateDistanceMeters(
 }
 
 /**
- * Obtiene la ubicación precisa del dispositivo actual
+ * Obtiene la ubicación precisa del dispositivo actual con fallback automático para interiores:
+ * - Fase 1: Intenta GPS de alta precisión con caché reciente.
+ * - Fase 2: Si está en interiores de un centro comercial / cocina y los satélites no llegan
+ *           (TIMEOUT o POSITION_UNAVAILABLE), cambia automáticamente a triangulación por Wi-Fi y antenas celulares.
  */
 export function getCurrentPosition(): Promise<Coordinates> {
   return new Promise((resolve, reject) => {
@@ -41,6 +44,7 @@ export function getCurrentPosition(): Promise<Coordinates> {
       return;
     }
 
+    // FASE 1: Intentar alta precisión con caché permisiva
     navigator.geolocation.getCurrentPosition(
       (position) => {
         resolve({
@@ -50,24 +54,51 @@ export function getCurrentPosition(): Promise<Coordinates> {
         });
       },
       (error) => {
-        let msg = 'No pudimos obtener tu ubicación.';
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            msg = 'Debes activar los permisos de ubicación (GPS) en tu celular para poder marcar.';
-            break;
-          case error.POSITION_UNAVAILABLE:
-            msg = 'La señal GPS no está disponible. Asegúrate de tener activada la ubicación en tu teléfono.';
-            break;
-          case error.TIMEOUT:
-            msg = 'Se agotó el tiempo esperando la señal GPS. Intenta de nuevo.';
-            break;
+        // Si el usuario bloqueó el permiso en el navegador (Chrome o Safari)
+        if (error.code === error.PERMISSION_DENIED) {
+          reject(
+            new Error(
+              '⚠️ El permiso de ubicación está BLOQUEADO en tu navegador (Chrome o Safari). Toca el icono de candado 🔒 (o "aA") arriba al lado del link, entra a Permisos y activa "Ubicación: Permitir", luego recarga.'
+            )
+          );
+          return;
         }
-        reject(new Error(msg));
+
+        // FASE 2 (FALLBACK): TIMEOUT o POSITION_UNAVAILABLE (común bajo techo en malls o cocina)
+        // Intentar con baja precisión (redes Wi-Fi y antenas móviles)
+        navigator.geolocation.getCurrentPosition(
+          (fallbackPos) => {
+            resolve({
+              latitude: fallbackPos.coords.latitude,
+              longitude: fallbackPos.coords.longitude,
+              accuracy: fallbackPos.coords.accuracy,
+            });
+          },
+          (fallbackErr) => {
+            let msg = 'No pudimos obtener tu ubicación.';
+            if (fallbackErr.code === fallbackErr.PERMISSION_DENIED) {
+              msg =
+                '⚠️ Permiso de ubicación bloqueado. Toca el candado 🔒 al lado del link y permite la ubicación en tu navegador.';
+            } else if (fallbackErr.code === fallbackErr.TIMEOUT) {
+              msg =
+                'La señal GPS tarda en responder bajo techo. Enciende el Wi-Fi en tu celular (ayuda a triangular la ubicación dentro del mall) o acércate a la entrada e intenta de nuevo.';
+            } else if (fallbackErr.code === fallbackErr.POSITION_UNAVAILABLE) {
+              msg =
+                'No se pudo triangular la posición dentro del local. Verifica tener el Wi-Fi o datos encendidos y la opción "Precisión de ubicación de Google" activa en tu teléfono.';
+            }
+            reject(new Error(msg));
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: 12000,
+            maximumAge: 180000, // hasta 3 minutos de caché válida
+          }
+        );
       },
       {
         enableHighAccuracy: true,
-        timeout: 12000,
-        maximumAge: 0,
+        timeout: 5000, // No esperar 12s si los satélites no llegan bajo techo
+        maximumAge: 60000, // hasta 1 minuto de caché reciente
       }
     );
   });
