@@ -83,7 +83,7 @@ export default function KioskMode({
   return (
     <div className="w-full">
       {/* Barra de control: Selección de modo y pestañas de área */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 mb-4">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4">
         {/* Selector de Modo */}
         <div className="bg-slate-900/90 p-1 rounded-2xl border border-slate-800 flex items-center shadow-sm">
           <button
@@ -92,7 +92,7 @@ export default function KioskMode({
               playSound('click');
               setMode('picker');
             }}
-            className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
               mode === 'picker'
                 ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                 : 'text-slate-400 hover:text-white'
@@ -108,14 +108,14 @@ export default function KioskMode({
               playSound('click');
               setMode('pin');
             }}
-            className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
               mode === 'pin'
                 ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
             <KeyRound className="w-4 h-4" />
-            Teclado PIN
+            Marcar con PIN
           </button>
         </div>
 
@@ -125,7 +125,7 @@ export default function KioskMode({
             <button
               type="button"
               onClick={() => setAreaFilter('Todos')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shrink-0 ${
                 areaFilter === 'Todos'
                   ? 'bg-slate-700 text-white shadow'
                   : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
@@ -136,7 +136,7 @@ export default function KioskMode({
             <button
               type="button"
               onClick={() => setAreaFilter('Cocina')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0 ${
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 shrink-0 ${
                 areaFilter === 'Cocina'
                   ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
                   : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
@@ -147,7 +147,7 @@ export default function KioskMode({
             <button
               type="button"
               onClick={() => setAreaFilter('Salón')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shrink-0 ${
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 shrink-0 ${
                 areaFilter === 'Salón'
                   ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20'
                   : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
@@ -163,116 +163,132 @@ export default function KioskMode({
       {mode === 'picker' && (
         <div>
           {/* Buscador */}
-          <div className="relative mb-3.5">
+          <div className="relative mb-4">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar colaborador por nombre, cargo o código..."
+              placeholder="Buscar colaborador por nombre o cargo..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors shadow-inner"
             />
           </div>
 
-          {/* Grid responsivo: 1 columna en celular pequeño, 2 en tablets/pantallas medianas, 2 o 3 en PC */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-2.5">
+          {/* Grid de Tarjetas: En móvil 1 columna amplia o 2; en Desktop 2 o 3 columnas amplias */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
             {filteredEmployees.map((emp) => {
               const activeAtt = activeAttendanceMap.get(emp.id);
               const isWorking = Boolean(activeAtt);
               const schedule = todaySchedulesMap.get(emp.id);
 
               return (
-                <button
+                <div
                   key={emp.id}
-                  type="button"
                   onClick={() => {
                     playSound('click');
                     triggerVibration(30);
                     setSelectedEmployee(emp);
                   }}
-                  className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border transition-all active:scale-[0.99] shadow-sm flex items-center justify-between gap-3 group ${
+                  className={`cursor-pointer rounded-2xl p-4 border transition-all duration-200 active:scale-[0.98] shadow-md flex flex-col justify-between group ${
                     isWorking
-                      ? 'bg-slate-900/95 border-emerald-500/40 hover:border-emerald-500 shadow-emerald-950/20'
-                      : 'bg-slate-900/80 border-slate-800/90 hover:border-slate-700 hover:bg-slate-900'
+                      ? 'bg-gradient-to-b from-slate-900 to-slate-900/95 border-emerald-500/50 shadow-emerald-950/20 hover:border-emerald-400'
+                      : 'bg-slate-900/90 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
                   }`}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {/* Avatar con iniciales */}
-                    <div
-                      className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center text-xs sm:text-sm font-black text-white shrink-0 shadow-md border border-white/20 relative"
-                      style={{ backgroundColor: emp.avatar_color || '#3b82f6' }}
-                    >
-                      {emp.name
-                        .split(' ')
-                        .map((n) => n[0])
-                        .slice(0, 2)
-                        .join('')
-                        .toUpperCase()}
+                  {/* Parte Superior: Avatar + Nombre Completo + Área */}
+                  <div>
+                    <div className="flex items-start gap-3 mb-2.5">
+                      {/* Avatar */}
+                      <div
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-sm font-black text-white shrink-0 shadow-md border border-white/20 relative"
+                        style={{ backgroundColor: emp.avatar_color || '#3b82f6' }}
+                      >
+                        {emp.name
+                          .split(' ')
+                          .map((n) => n[0])
+                          .slice(0, 2)
+                          .join('')
+                          .toUpperCase()}
 
-                      {isWorking && (
-                        <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-slate-950 rounded-full flex items-center justify-center">
-                          <Check className="w-2.5 h-2.5 text-white" />
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Información completa (Nombres legibles en celular y PC) */}
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs sm:text-sm font-bold text-white leading-tight">
-                          {emp.name}
-                        </span>
-                        {!emp.has_custom_pin && (
-                          <span className="inline-flex items-center gap-0.5 text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded-full shrink-0 font-bold">
-                            <Sparkles className="w-2.5 h-2.5" /> Crear PIN
+                        {isWorking && (
+                          <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-slate-950 rounded-full flex items-center justify-center">
+                            <Check className="w-2.5 h-2.5 text-white" />
                           </span>
                         )}
-                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded shrink-0 ${
-                          emp.area === 'Cocina'
-                            ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                            : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
-                        }`}>
-                          {emp.area}
-                        </span>
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5">{emp.role}</p>
+
+                      {/* Nombres completos y legibles sin cortes */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${
+                              emp.area === 'Cocina'
+                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            }`}
+                          >
+                            {emp.area}
+                          </span>
+                          {!emp.has_custom_pin && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded-md font-bold">
+                              <Sparkles className="w-2.5 h-2.5" /> Crear PIN
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Nombre completo */}
+                        <h4 className="text-sm sm:text-base font-bold text-white leading-snug mt-1 break-words">
+                          {emp.name}
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">{emp.role}</p>
+                      </div>
+                    </div>
+
+                    {/* Estado de Horario */}
+                    <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 mb-3 flex items-center justify-between text-xs">
                       {schedule ? (
-                        <p className="text-[10px] text-emerald-400/90 font-mono flex items-center gap-1 mt-0.5">
-                          <Clock className="w-2.5 h-2.5" />
-                          Hoy: {schedule.start_time.slice(0, 5)} - {schedule.end_time.slice(0, 5)}
-                        </p>
+                        <span className="text-emerald-400 font-mono flex items-center gap-1.5 font-medium">
+                          <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                          {schedule.start_time.slice(0, 5)} - {schedule.end_time.slice(0, 5)}
+                        </span>
                       ) : (
-                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                          Hoy: Descanso programado
-                        </p>
+                        <span className="text-slate-400 font-medium">Descanso programado hoy</span>
+                      )}
+
+                      {isWorking && activeAtt && (
+                        <span className="text-emerald-300 font-mono text-[11px] font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                          Entrada: {new Date(activeAtt.clock_in).toLocaleTimeString('es-PE', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true,
+                          })}
+                        </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Estado / Botón rápido */}
-                  <div className="shrink-0 flex flex-col items-end gap-1">
+                  {/* Botón de Acción a Ancho Completo */}
+                  <button
+                    type="button"
+                    className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition-all ${
+                      isWorking
+                        ? 'bg-rose-500/15 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/30'
+                        : 'bg-emerald-500/15 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/30'
+                    }`}
+                  >
                     {isWorking ? (
-                      <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold shadow-sm">
-                        <Square className="w-3 h-3 fill-current" />
-                        Salida
-                      </span>
+                      <>
+                        <Square className="w-3.5 h-3.5 fill-current" />
+                        <span>FINALIZAR JORNADA</span>
+                      </>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold shadow-sm group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
-                        <Play className="w-3 h-3 fill-current" />
-                        Entrada
-                      </span>
+                      <>
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>INICIAR JORNADA</span>
+                      </>
                     )}
-                    {isWorking && activeAtt && (
-                      <span className="text-[10px] text-emerald-400 font-mono font-medium">
-                        Desde: {new Date(activeAtt.clock_in).toLocaleTimeString('es-PE', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true,
-                        })}
-                      </span>
-                    )}
-                  </div>
-                </button>
+                  </button>
+                </div>
               );
             })}
           </div>
