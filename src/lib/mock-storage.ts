@@ -245,8 +245,8 @@ export const INITIAL_SCHEDULES: Schedule[] = [
   ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-salon-3', d)),
   ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-salon-4', d)),
   ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-5', d)),
-  ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-6', d)),
-  ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-7', d)),
+  ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-6', d)),
+  ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-7', d)),
   ...[1, 2, 4, 5, 6, 0].map((d) => createShift('emp-salon-8', d)),
   ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-9', d, '15:00', '23:00')),
 
@@ -258,10 +258,10 @@ export const INITIAL_SCHEDULES: Schedule[] = [
 ];
 
 export const DEFAULT_CONFIG: SystemConfig = {
-  store_name: 'Shimaya Ramen',
+  store_name: 'Shimaya Ramen - Mall Aventura Chiclayo',
   admin_pin: '1234',
-  telegram_bot_token: '',
-  telegram_chat_id: '',
+  telegram_bot_token: '8941568069:AAEeg9DZhP54X8XP-ZGjcKLYnbVhAOKYs80',
+  telegram_chat_id: '8657890692',
   auto_checkout_hour: 1,
   timezone_offset: -5,
   // Coordenadas exactas de Shimaya Ramen - Mall Aventura Chiclayo (Av. Panamericana Norte 639)
@@ -277,7 +277,7 @@ export const DEFAULT_CONFIG: SystemConfig = {
 const STORAGE_KEYS = {
   EMPLOYEES_V3: 'store_attendance_employees_v3',
   ATTENDANCE_V3: 'store_attendance_records_v3',
-  SCHEDULES_V3: 'store_attendance_schedules_v3',
+  SCHEDULES_V3: 'store_attendance_schedules_v4',
   CONFIG_V3: 'store_attendance_config_v3',
 };
 
@@ -329,7 +329,12 @@ export const getLocalSchedules = (): Schedule[] => {
     return INITIAL_SCHEDULES;
   }
   try {
-    return JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed) || parsed.length < 100) {
+      localStorage.setItem(STORAGE_KEYS.SCHEDULES_V3, JSON.stringify(INITIAL_SCHEDULES));
+      return INITIAL_SCHEDULES;
+    }
+    return parsed;
   } catch {
     return INITIAL_SCHEDULES;
   }
@@ -359,6 +364,13 @@ export const getLocalConfig = (): SystemConfig => {
       parsed.radius_meters = 250;
       parsed.store_location_name = 'Shimaya Ramen - Mall Aventura Chiclayo';
       parsed.require_gps = false;
+      localStorage.setItem(STORAGE_KEYS.CONFIG_V3, JSON.stringify(parsed));
+    }
+
+    if (!parsed.telegram_bot_token || !parsed.telegram_chat_id) {
+      parsed.telegram_bot_token = DEFAULT_CONFIG.telegram_bot_token;
+      parsed.telegram_chat_id = DEFAULT_CONFIG.telegram_chat_id;
+      parsed.store_name = DEFAULT_CONFIG.store_name;
       localStorage.setItem(STORAGE_KEYS.CONFIG_V3, JSON.stringify(parsed));
     }
 

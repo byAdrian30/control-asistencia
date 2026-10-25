@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase';
-import { buildLateReportMessage, sendTelegramMessage } from '@/lib/telegram';
+import {
+  buildLateReportMessage,
+  sendTelegramMessage,
+  TelegramLateRecord,
+  TelegramOnTimeRecord,
+  TelegramPendingRecord,
+  TelegramRestDayRecord,
+} from '@/lib/telegram';
 import {
   calculateMinutesLate,
   formatPeruTime,
@@ -10,7 +17,11 @@ import {
   calculateQuincenaTardiness,
 } from '@/lib/late-calculator';
 import { Employee, Schedule, Attendance } from '@/types/database';
-import { serverAttendances } from '@/lib/server-state';
+import {
+  serverAttendances,
+  currentServerConfig,
+  addOrUpdateServerAttendance,
+} from '@/lib/server-state';
 import { INITIAL_EMPLOYEES, INITIAL_SCHEDULES } from '@/lib/mock-storage';
 
 export async function GET(req: NextRequest) {
@@ -23,7 +34,13 @@ export async function POST(req: NextRequest) {
 
 async function handleTelegramReport(req: NextRequest) {
   try {
-    let bodyData: { botToken?: string; chatId?: string; storeName?: string } = {};
+    let bodyData: {
+      botToken?: string;
+      chatId?: string;
+      storeName?: string;
+      attendances?: Attendance[];
+    } = {};
+
     if (req.method === 'POST') {
       try {
         bodyData = await req.json();
@@ -32,15 +49,35 @@ async function handleTelegramReport(req: NextRequest) {
       }
     }
 
-    const botToken = bodyData.botToken || process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = bodyData.chatId || process.env.TELEGRAM_CHAT_ID;
-    const storeName = bodyData.storeName || process.env.STORE_NAME || 'Tienda Principal';
+    // Si el cliente envió marcaciones en el POST, integrarlas a la memoria central del servidor
+    if (Array.isArray(bodyData.attendances)) {
+      bodyData.attendances.forEach((att: Attendance) => {
+        addOrUpdateServerAttendance(att);
+      });
+    }
+
+    const botToken =
+      bodyData.botToken ||
+      currentServerConfig.telegram_bot_token ||
+      process.env.TELEGRAM_BOT_TOKEN;
+
+    const chatId =
+      bodyData.chatId ||
+      currentServerConfig.telegram_chat_id ||
+      process.env.TELEGRAM_CHAT_ID;
+
+    const storeName =
+      bodyData.storeName ||
+      currentServerConfig.store_name ||
+      process.env.STORE_NAME ||
+      'Shimaya Ramen - Mall Aventura Chiclayo';
 
     if (!botToken || !chatId) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Faltan credenciales de Telegram (TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID).',
+          error:
+            'Faltan credenciales de Telegram (TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID). Configúralas en el Panel Admin o en Vercel.',
         },
         { status: 400 }
       );
@@ -51,125 +88,162 @@ async function handleTelegramReport(req: NextRequest) {
     const peruNow = getPeruDateTime(now);
     const dateStr = formatPeruDate(now);
     const quincena = getQuincenaRange(now);
+    const currentDayOfWeek = peruNow.dayOfWeek;
 
     // Rango de hoy en hora Perú (America/Lima) convertido a UTC
     const todayStart = new Date(Date.UTC(peruNow.year, peruNow.month - 1, peruNow.day, 5, 0, 0)).toISOString();
     const todayEnd = new Date(Date.UTC(peruNow.year, peruNow.month - 1, peruNow.day + 1, 4, 59, 59)).toISOString();
+    const todayStartTime = new Date(todayStart).getTime();
+    const todayEndTime = new Date(todayEnd).getTime();
 
-    let lateRecords: Array<{
-      name: string;
-      clockInTime: string;
-      expectedTime: string;
-      minutesLate: number;
-      quincenaTotalMinutes?: number;
-      lostChippu?: boolean;
-    }> = [];
-    let onTimeCount = 0;
-    let totalPresent = 0;
-    const currentDayOfWeek = peruNow.dayOfWeek;
+    const isToday = (iso?: string | null) => {
+      if (!iso) return false;
+      const t = new Date(iso).getTime();
+      return t >= todayStartTime && t <= todayEndTime;
+    };
 
+    // 1. Obtener todos los colaboradores activos (19 de Cocina y Salón)
+    let allEmployees: Employee[] = INITIAL_EMPLOYEES;
     if (supabase) {
-      // 1. Obtener empleados
-      const { data: employees } = await supabase.from('employees').select('*').eq('active', true);
-      const employeeMap = new Map<string, Employee>();
-      (employees || []).forEach((e: Employee) => employeeMap.set(e.id, e));
+      const { data: emps } = await supabase.from('employees').select('*').eq('active', true);
+      if (emps && emps.length > 0) {
+        allEmployees = emps;
+      }
+    }
 
-      // 2. Obtener horarios del día de la semana actual en Perú
-      const { data: schedules } = await supabase
+    // 2. Obtener horarios correspondientes al día de hoy según la malla horaria oficial
+    let todaySchedules: Schedule[] = INITIAL_SCHEDULES.filter(
+      (s) => s.day_of_week === currentDayOfWeek && s.is_active
+    );
+    if (supabase) {
+      const { data: schs } = await supabase
         .from('schedules')
         .select('*')
         .eq('day_of_week', currentDayOfWeek)
         .eq('is_active', true);
-      const scheduleMap = new Map<string, Schedule>();
-      (schedules || []).forEach((s: Schedule) => scheduleMap.set(s.employee_id, s));
+      if (schs && schs.length > 0) {
+        todaySchedules = schs;
+      }
+    }
 
-      // 3. Obtener asistencias de hoy
-      const { data: attendances } = await supabase
+    const scheduleMap = new Map<string, Schedule>();
+    todaySchedules.forEach((s) => scheduleMap.set(s.employee_id, s));
+
+    // 3. Obtener todas las marcaciones del servidor y/o Supabase
+    let allAttendances: Attendance[] = [...serverAttendances];
+    if (supabase) {
+      const { data: dbAtts } = await supabase
         .from('attendance')
         .select('*')
         .gte('clock_in', todayStart)
         .lte('clock_in', todayEnd);
-
-      const records = (attendances || []) as Attendance[];
-      totalPresent = records.length;
-
-      records.forEach((att) => {
-        const emp = employeeMap.get(att.employee_id);
-        const empName = emp ? emp.name : 'Colaborador';
-        const sch = scheduleMap.get(att.employee_id);
-        const timeStr = formatPeruTime(att.clock_in);
-
-        let lateMin = 0;
-        let expectedStr = sch?.start_time ? sch.start_time.slice(0, 5) : 'Sin horario';
-
-        if (sch) {
-          const calc = calculateMinutesLate(att.clock_in, sch);
-          lateMin = calc.minutesLate;
-        }
-
-        if (lateMin > 0) {
-          const qCalc = calculateQuincenaTardiness(att.employee_id, records, 0, att.clock_in);
-          lateRecords.push({
-            name: empName,
-            clockInTime: timeStr,
-            expectedTime: expectedStr,
-            minutesLate: lateMin,
-            quincenaTotalMinutes: qCalc.totalMinutes,
-            lostChippu: qCalc.lostChippu,
-          });
-        } else {
-          onTimeCount++;
-        }
-      });
-    } else {
-      // Usar marcaciones reales almacenadas en la memoria central del servidor
-      const employeeMap = new Map<string, Employee>();
-      INITIAL_EMPLOYEES.forEach((e) => employeeMap.set(e.id, e));
-
-      const scheduleMap = new Map<string, Schedule>();
-      INITIAL_SCHEDULES.filter((s) => s.day_of_week === currentDayOfWeek && s.is_active).forEach((s) =>
-        scheduleMap.set(s.employee_id, s)
-      );
-
-      totalPresent = serverAttendances.length;
-
-      serverAttendances.forEach((att) => {
-        const emp = employeeMap.get(att.employee_id);
-        const empName = emp ? emp.name : 'Colaborador';
-        const sch = scheduleMap.get(att.employee_id);
-        const timeStr = formatPeruTime(att.clock_in);
-
-        let lateMin = 0;
-        let expectedStr = sch?.start_time ? sch.start_time.slice(0, 5) : 'Sin horario';
-        if (sch) {
-          const calc = calculateMinutesLate(att.clock_in, sch);
-          lateMin = calc.minutesLate;
-        }
-
-        if (lateMin > 0) {
-          const qCalc = calculateQuincenaTardiness(att.employee_id, serverAttendances, 0, att.clock_in);
-          lateRecords.push({
-            name: empName,
-            clockInTime: timeStr,
-            expectedTime: expectedStr,
-            minutesLate: lateMin,
-            quincenaTotalMinutes: qCalc.totalMinutes,
-            lostChippu: qCalc.lostChippu,
-          });
-        } else {
-          onTimeCount++;
-        }
-      });
+      if (dbAtts && dbAtts.length > 0) {
+        const idSet = new Set(allAttendances.map((a) => a.id));
+        dbAtts.forEach((att) => {
+          if (!idSet.has(att.id)) {
+            allAttendances.push(att);
+          }
+        });
+      }
     }
 
-    // 4. Construir y enviar mensaje Telegram
+    // Marcaciones de hoy
+    const todayAttendances = allAttendances.filter((a) => isToday(a.clock_in));
+
+    // 4. Clasificar a cada uno de los 19 colaboradores
+    const lateRecords: TelegramLateRecord[] = [];
+    const onTimeRecords: TelegramOnTimeRecord[] = [];
+    const missingRecords: TelegramPendingRecord[] = [];
+    const afternoonRecords: TelegramPendingRecord[] = [];
+    const restDayRecords: TelegramRestDayRecord[] = [];
+
+    allEmployees.forEach((emp) => {
+      const sch = scheduleMap.get(emp.id);
+
+      // Si no tiene horario programado para hoy en la malla -> Está de descanso
+      if (!sch || !sch.is_active) {
+        restDayRecords.push({
+          name: emp.name,
+          area: emp.area,
+          role: emp.role,
+        });
+        return;
+      }
+
+      // Buscar si ya marcó ingreso hoy
+      const empTodayAtts = todayAttendances
+        .filter((a) => a.employee_id === emp.id && isToday(a.clock_in))
+        .sort((a, b) => new Date(a.clock_in).getTime() - new Date(b.clock_in).getTime());
+
+      const att = empTodayAtts[0];
+
+      if (att) {
+        // Marcó ingreso
+        const timeStr = formatPeruTime(att.clock_in);
+        const expectedStr = sch.start_time ? sch.start_time.slice(0, 5) : '11:00';
+        const calc = calculateMinutesLate(att.clock_in, sch);
+        const lateMin = calc.minutesLate;
+
+        if (lateMin > 0) {
+          const qCalc = calculateQuincenaTardiness(emp.id, allAttendances, 0, att.clock_in);
+          lateRecords.push({
+            name: emp.name,
+            clockInTime: timeStr,
+            expectedTime: expectedStr,
+            minutesLate: lateMin,
+            quincenaTotalMinutes: qCalc.totalMinutes,
+            lostChippu: qCalc.lostChippu,
+            area: emp.area,
+          });
+        } else {
+          onTimeRecords.push({
+            name: emp.name,
+            clockInTime: timeStr,
+            expectedTime: expectedStr,
+            area: emp.area,
+          });
+        }
+      } else {
+        // NO ha marcado aún hoy
+        const [startH, startM] = (sch.start_time || '11:00').split(':').map(Number);
+        const startTotalMinutes = (startH || 0) * 60 + (startM || 0);
+
+        // Turno de la mañana / mediodía: 12:00 PM = 720 minutos
+        if (startTotalMinutes <= 720) {
+          missingRecords.push({
+            name: emp.name,
+            expectedTime: sch.start_time ? sch.start_time.slice(0, 5) : '11:00',
+            area: emp.area,
+            role: emp.role,
+          });
+        } else {
+          // Turno de la tarde (13:45, 14:00, 15:00): aún no le correspondía marcar a las 12 PM
+          afternoonRecords.push({
+            name: emp.name,
+            expectedTime: sch.start_time ? sch.start_time.slice(0, 5) : '15:00',
+            area: emp.area,
+            role: emp.role,
+          });
+        }
+      }
+    });
+
+    const totalPresent = onTimeRecords.length + lateRecords.length;
+    const onTimeCount = onTimeRecords.length;
+
+    // 5. Construir y enviar mensaje Telegram
     const message = buildLateReportMessage({
       storeName,
       dateStr,
       quincenaLabel: quincena.label,
       lateRecords,
+      onTimeRecords,
       onTimeCount,
       totalPresent,
+      missingRecords,
+      afternoonRecords,
+      restDayRecords,
+      totalEmployees: allEmployees.length,
     });
 
     const telegramRes = await sendTelegramMessage({
@@ -191,12 +265,20 @@ async function handleTelegramReport(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Notificación de tardanzas enviada con éxito a Telegram.',
+      message: 'Reporte del mediodía enviado con éxito a Telegram.',
       data: {
+        totalEmployees: allEmployees.length,
         totalPresent,
-        lateCount: lateRecords.length,
         onTimeCount,
+        lateCount: lateRecords.length,
+        missingCount: missingRecords.length,
+        afternoonCount: afternoonRecords.length,
+        restDayCount: restDayRecords.length,
+        missingRecords,
         lateRecords,
+        onTimeRecords,
+        afternoonRecords,
+        restDayRecords,
       },
     });
   } catch (error: unknown) {

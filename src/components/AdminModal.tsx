@@ -1059,15 +1059,18 @@ export default function AdminModal({
                   <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
                     <h5 className="font-bold text-amber-300 text-xs flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5" />
-                      Enviar Reporte de Tardanzas Ahora Mismo
+                      Enviar Reporte del Mediodía (12:00 PM) Ahora Mismo
                     </h5>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Genera y envía el desglose completo a Telegram: quién no marcó (faltas matutinas), tardanzas con estado del 100% de Chippu, presentes puntuales, turnos tarde y quién está en su día de descanso según la malla oficial del PDF.
+                    </p>
                     <button
                       type="button"
                       onClick={handleSendLateReportNow}
                       disabled={isTestingTelegram || !botToken || !chatId}
                       className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition-all disabled:opacity-40"
                     >
-                      Disparar Reporte de Tardanzas a Telegram
+                      Disparar Reporte del Mediodía a Telegram
                     </button>
                   </div>
                 </div>

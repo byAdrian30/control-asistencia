@@ -434,6 +434,7 @@ export default function AttendanceHomePage() {
           botToken: config.telegram_bot_token,
           chatId: config.telegram_chat_id,
           storeName: config.store_name,
+          attendances,
         }),
       });
       const data = await res.json();
