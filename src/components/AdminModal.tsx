@@ -18,9 +18,17 @@ import {
   RotateCcw,
   Copy,
   Check,
+  Smartphone,
+  MapPin,
+  ExternalLink,
+  Share2,
+  ShieldCheck,
+  ShieldAlert,
+  Navigation,
 } from 'lucide-react';
 import { Employee, Schedule, SystemConfig, Attendance } from '@/types/database';
 import PinPad from './PinPad';
+import { getCurrentPosition } from '@/lib/geo';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -58,7 +66,10 @@ export default function AdminModal({
   const [adminPinInput, setAdminPinInput] = useState('');
   const [pinError, setPinError] = useState('');
 
-  const [activeTab, setActiveTab] = useState<'employees' | 'schedules' | 'telegram' | 'autoclose' | 'supabase'>('employees');
+  // Tabs
+  const [activeTab, setActiveTab] = useState<
+    'links' | 'geofence' | 'employees' | 'schedules' | 'telegram' | 'autoclose' | 'supabase'
+  >('links');
 
   // Formulario nuevo empleado
   const [newEmpName, setNewEmpName] = useState('');
@@ -77,9 +88,20 @@ export default function AdminModal({
   // Estados de Telegram
   const [botToken, setBotToken] = useState(config.telegram_bot_token || '');
   const [chatId, setChatId] = useState(config.telegram_chat_id || '');
-  const [storeName, setStoreName] = useState(config.store_name || 'Tienda Shimaya');
+  const [storeName, setStoreName] = useState(config.store_name || 'Shimaya Ramen');
   const [telegramStatus, setTelegramStatus] = useState<string | null>(null);
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+
+  // Estados de GPS Mall Aventura
+  const [mallLat, setMallLat] = useState(config.mall_lat || -12.0558);
+  const [mallLng, setMallLng] = useState(config.mall_lng || -76.9715);
+  const [mallRadius, setMallRadius] = useState(config.radius_meters || 180);
+  const [mallName, setMallName] = useState(config.store_location_name || 'Shimaya Ramen - Mall Aventura');
+  const [calibratingGps, setCalibratingGps] = useState(false);
+  const [geoStatusMsg, setGeoStatusMsg] = useState<string | null>(null);
+
+  // Copiado de links
+  const [copiedLinkIndex, setCopiedLinkIndex] = useState<string | null>(null);
 
   // Estado auto-checkout
   const [autoCloseStatus, setAutoCloseStatus] = useState<string | null>(null);
@@ -103,9 +125,17 @@ export default function AdminModal({
     e.preventDefault();
     if (!newEmpName.trim()) return;
 
+    const slug = newEmpName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
     const hasPin = Boolean(newEmpCode.trim());
     const newEmp: Employee = {
       id: `emp-${Date.now()}`,
+      slug: slug || `emp-${Date.now()}`,
       name: newEmpName.trim(),
       code: newEmpCode.trim(),
       has_custom_pin: hasPin,
@@ -120,9 +150,78 @@ export default function AdminModal({
     setNewEmpCode('');
   };
 
+  // Reset PIN
   const handleResetPin = (emp: Employee) => {
     const updated = { ...emp, code: '', has_custom_pin: false };
     onSaveEmployee(updated);
+  };
+
+  // Desvincular Celular para que pueda anexar uno nuevo
+  const handleUnbindDevice = (emp: Employee) => {
+    const updated = {
+      ...emp,
+      registered_device_id: null,
+      registered_device_name: null,
+      registered_device_at: null,
+      biometric_enrolled: false,
+    };
+    onSaveEmployee(updated);
+  };
+
+  // Calibrar GPS con la ubicación actual del supervisor
+  const handleCalibrateCurrentGps = async () => {
+    setCalibratingGps(true);
+    setGeoStatusMsg('Obteniendo coordenadas satelitales exactas...');
+    try {
+      const pos = await getCurrentPosition();
+      setMallLat(pos.latitude);
+      setMallLng(pos.longitude);
+      const newConfig: SystemConfig = {
+        ...config,
+        mall_lat: pos.latitude,
+        mall_lng: pos.longitude,
+        radius_meters: mallRadius,
+        store_location_name: mallName,
+      };
+      onSaveConfig(newConfig);
+      setGeoStatusMsg(`✅ ¡Ubicación calibrada con éxito! [Lat: ${pos.latitude.toFixed(6)}, Lng: ${pos.longitude.toFixed(6)}]`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setGeoStatusMsg(`❌ Error: ${msg}`);
+    } finally {
+      setCalibratingGps(false);
+    }
+  };
+
+  const handleSaveGeoSettings = () => {
+    const newConfig: SystemConfig = {
+      ...config,
+      mall_lat: Number(mallLat),
+      mall_lng: Number(mallLng),
+      radius_meters: Number(mallRadius),
+      store_location_name: mallName,
+    };
+    onSaveConfig(newConfig);
+    setGeoStatusMsg('Configuración de GPS y Geovalla guardada.');
+    setTimeout(() => setGeoStatusMsg(null), 3000);
+  };
+
+  const getPersonalLink = (emp: Employee) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://asistencia-tienda.vercel.app';
+    return `${origin}/m/${emp.slug || emp.id}`;
+  };
+
+  const handleCopyLink = (emp: Employee) => {
+    const link = getPersonalLink(emp);
+    navigator.clipboard.writeText(link);
+    setCopiedLinkIndex(emp.id);
+    setTimeout(() => setCopiedLinkIndex(null), 2500);
+  };
+
+  const handleShareWhatsApp = (emp: Employee) => {
+    const link = getPersonalLink(emp);
+    const message = `Hola ${emp.name}, este es tu link personal e intransferible para marcar asistencia en Shimaya Ramen (Mall Aventura):%0A%0A${link}%0A%0AAbrelo desde tu celular para vincular tu equipo.`;
+    window.open(`https://wa.me/?text=${message}`, '_blank');
   };
 
   const handleAddOrUpdateSchedule = (e: React.FormEvent) => {
@@ -205,51 +304,9 @@ export default function AdminModal({
     }
   };
 
-  const handleCopySqlGuide = () => {
-    const sqlText = `-- Abre Supabase -> SQL Editor y pega esto:
-CREATE TABLE IF NOT EXISTS employees (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  code TEXT DEFAULT '',
-  has_custom_pin BOOLEAN DEFAULT FALSE,
-  role TEXT,
-  area TEXT DEFAULT 'Salón',
-  avatar_color TEXT,
-  active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE TABLE IF NOT EXISTS schedules (
-  id TEXT PRIMARY KEY,
-  employee_id TEXT REFERENCES employees(id) ON DELETE CASCADE,
-  day_of_week INT,
-  start_time TIME,
-  end_time TIME,
-  tolerance_minutes INT DEFAULT 10,
-  is_active BOOLEAN DEFAULT TRUE
-);
-CREATE TABLE IF NOT EXISTS attendance (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  employee_id TEXT REFERENCES employees(id) ON DELETE CASCADE,
-  clock_in TIMESTAMPTZ DEFAULT NOW(),
-  clock_out TIMESTAMPTZ,
-  auto_closed BOOLEAN DEFAULT FALSE,
-  minutes_late INT DEFAULT 0,
-  notes TEXT
-);
-ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
-ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Public Read" ON employees FOR SELECT USING (true);
-CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
-
-    navigator.clipboard.writeText(sqlText);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 3000);
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl p-5 sm:p-6 text-white shadow-2xl relative max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
+      <div className="bg-slate-900 border border-slate-800 w-full max-w-3xl rounded-3xl p-4 sm:p-6 text-white shadow-2xl relative max-h-[94vh] flex flex-col">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800/80 transition-colors z-10"
@@ -293,15 +350,41 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
           <div className="flex flex-col h-full overflow-hidden">
             <div className="mb-3 pb-2 border-b border-slate-800 pr-8">
               <h2 className="text-base font-bold text-white flex items-center gap-2">
-                Panel de Administración
+                Panel de Administración Shimaya
                 <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono">
                   Admin
                 </span>
               </h2>
             </div>
 
-            {/* Pestañas */}
+            {/* Pestañas de Navegación */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 scrollbar-none text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setActiveTab('links')}
+                className={`px-3 py-2 rounded-xl flex items-center gap-1.5 shrink-0 transition-all ${
+                  activeTab === 'links'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md font-bold'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                Links Personales ({employees.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('geofence')}
+                className={`px-3 py-2 rounded-xl flex items-center gap-1.5 shrink-0 transition-all ${
+                  activeTab === 'geofence'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md font-bold'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                GPS Mall Aventura
+              </button>
+
               <button
                 type="button"
                 onClick={() => setActiveTab('employees')}
@@ -312,7 +395,7 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                 }`}
               >
                 <Users className="w-3.5 h-3.5" />
-                Personal ({employees.length})
+                Personal
               </button>
 
               <button
@@ -353,27 +436,218 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                 <Moon className="w-3.5 h-3.5" />
                 Auto-Cierre 1:00 AM
               </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('supabase')}
-                className={`px-3 py-2 rounded-xl flex items-center gap-1.5 shrink-0 transition-all ${
-                  activeTab === 'supabase'
-                    ? 'bg-emerald-500 text-slate-950 shadow-md font-bold'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                <Database className="w-3.5 h-3.5" />
-                Supabase & Vercel
-              </button>
             </div>
 
-            {/* CONTENIDO */}
+            {/* CONTENIDO DE PESTAÑAS */}
             <div className="flex-1 overflow-y-auto pr-1 text-xs">
-              {/* TAB PERSONAL */}
+              {/* TAB 1: LINKS PERSONALES Y CELULARES VINCULADOS */}
+              {activeTab === 'links' && (
+                <div className="space-y-3">
+                  <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
+                    <p className="font-bold text-emerald-300 flex items-center gap-1.5 mb-1">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      Control de Dispositivo Único e Intransferible
+                    </p>
+                    <p className="text-slate-300 leading-relaxed text-[11px]">
+                      Cada colaborador tiene su <strong>enlace personal único</strong>. La primera vez que lo abran en su celular, el sistema anexará ese teléfono y sus datos biométricos. A partir de ese momento, <strong>ningún tercero podrá marcar por ellos desde otro teléfono</strong>.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    {employees.map((emp) => {
+                      const link = getPersonalLink(emp);
+                      const isLinked = Boolean(emp.registered_device_id);
+
+                      return (
+                        <div
+                          key={emp.id}
+                          className="p-3 rounded-2xl bg-slate-800/50 border border-slate-800 hover:border-slate-700 transition-all"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs text-white shrink-0"
+                                style={{ backgroundColor: emp.avatar_color || '#3b82f6' }}
+                              >
+                                {emp.name.slice(0, 2).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-bold text-white truncate text-xs">{emp.name}</p>
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
+                                    {emp.area}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-400">
+                                  {isLinked ? (
+                                    <span className="text-emerald-400 font-medium flex items-center gap-1 mt-0.5">
+                                      <Smartphone className="w-3 h-3" />
+                                      {emp.registered_device_name || 'Celular Vinculado'}
+                                    </span>
+                                  ) : (
+                                    <span className="text-amber-400 font-medium flex items-center gap-1 mt-0.5">
+                                      ⚪ Celular no vinculado (esperando 1er ingreso)
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Botones de Acción */}
+                            <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyLink(emp)}
+                                className="px-2.5 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-medium text-[11px] flex items-center gap-1 transition-all"
+                                title="Copiar enlace personal"
+                              >
+                                {copiedLinkIndex === emp.id ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span>Copiado</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span>Copiar Link</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleShareWhatsApp(emp)}
+                                className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] flex items-center gap-1 transition-all"
+                                title="Enviar enlace directo por WhatsApp"
+                              >
+                                <Share2 className="w-3.5 h-3.5" />
+                                <span>WhatsApp</span>
+                              </button>
+
+                              {isLinked && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnbindDevice(emp)}
+                                  className="px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 font-medium text-[10px] flex items-center gap-1 transition-all border border-slate-700"
+                                  title="Si el colaborador cambió de celular, desvincula el anterior para que registre el nuevo"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  Desvincular
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: GPS GEOVALLA (MALL AVENTURA) */}
+              {activeTab === 'geofence' && (
+                <div className="space-y-3.5">
+                  <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
+                    <h4 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-emerald-400" />
+                      Geolocalización Obligatoria (Mall Aventura)
+                    </h4>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      El sistema solo permite marcar cuando el celular del colaborador se encuentra físicamente dentro del radio de <strong>Shimaya Ramen en Mall Aventura</strong>.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1">Nombre del Local</label>
+                        <input
+                          type="text"
+                          value={mallName}
+                          onChange={(e) => setMallName(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1">
+                          Radio Máximo Permitido ({mallRadius} metros)
+                        </label>
+                        <input
+                          type="range"
+                          min="50"
+                          max="500"
+                          step="10"
+                          value={mallRadius}
+                          onChange={(e) => setMallRadius(Number(e.target.value))}
+                          className="w-full accent-emerald-500 cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                          <span>50m (Muy estricto)</span>
+                          <span>180m (Recomendado Mall)</span>
+                          <span>500m</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1">Latitud GPS</label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          value={mallLat}
+                          onChange={(e) => setMallLat(Number(e.target.value))}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1">Longitud GPS</label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          value={mallLng}
+                          onChange={(e) => setMallLng(Number(e.target.value))}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Botón de Calibración en 1 Clic */}
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleCalibrateCurrentGps}
+                        disabled={calibratingGps}
+                        className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 text-slate-950 font-black rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20"
+                      >
+                        <Navigation className="w-4 h-4" />
+                        {calibratingGps
+                          ? 'Obteniendo GPS...'
+                          : '📍 Fijar Mi Ubicación Actual como Punto Exacto de Shimaya'}
+                      </button>
+                      <p className="text-[10px] text-slate-400 text-center mt-1.5">
+                        (Pruébalo cuando estés parado en el local para registrar el punto exacto con 1 toque).
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveGeoSettings}
+                      className="w-full py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all"
+                    >
+                      Guardar Coordenadas Manualmente
+                    </button>
+
+                    {geoStatusMsg && (
+                      <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-center">
+                        {geoStatusMsg}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: PERSONAL */}
               {activeTab === 'employees' && (
                 <div className="space-y-4">
-                  {/* Formulario nuevo */}
                   <form
                     onSubmit={handleAddEmployee}
                     className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3"
@@ -416,9 +690,7 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] text-slate-400 block mb-1">
-                          PIN (Opcional, si lo dejas vacío lo creará él mismo)
-                        </label>
+                        <label className="text-[10px] text-slate-400 block mb-1">PIN Inicial (Opcional)</label>
                         <input
                           type="text"
                           maxLength={4}
@@ -437,7 +709,6 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                     </button>
                   </form>
 
-                  {/* Lista de Empleados Existentes */}
                   <div className="space-y-2">
                     <h4 className="font-bold text-slate-300 text-xs">
                       Colaboradores Actuales ({employees.length})
@@ -464,9 +735,7 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                                     PIN registrado ({emp.code})
                                   </span>
                                 ) : (
-                                  <span className="text-amber-400 font-bold">
-                                    Pendiente de crear PIN
-                                  </span>
+                                  <span className="text-amber-400 font-bold">Sin PIN</span>
                                 )}
                               </p>
                             </div>
@@ -477,10 +746,9 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                                 type="button"
                                 onClick={() => handleResetPin(emp)}
                                 className="px-2 py-1 text-[10px] bg-slate-700 hover:bg-amber-600 text-white rounded-lg transition-colors flex items-center gap-1"
-                                title="Permitirle crear un nuevo PIN en su próxima marcación"
+                                title="Resetear PIN"
                               >
-                                <RotateCcw className="w-3 h-3" />
-                                Reset PIN
+                                <RotateCcw className="w-3 h-3" /> Reset PIN
                               </button>
                             )}
                             <button
@@ -499,7 +767,7 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                 </div>
               )}
 
-              {/* TAB MALLA HORARIA */}
+              {/* TAB 4: MALLA HORARIA */}
               {activeTab === 'schedules' && (
                 <div className="space-y-4">
                   <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
@@ -583,29 +851,26 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                     </form>
                   </div>
 
-                  <div className="space-y-2">
-                    <h4 className="font-bold text-slate-300 text-xs">Turnos Registrados</h4>
-                    <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
-                      {schedules.map((sch) => {
-                        const emp = employees.find((e) => e.id === sch.employee_id);
-                        return (
-                          <div
-                            key={sch.id}
-                            className="p-2 rounded-xl bg-slate-800/40 border border-slate-800 flex items-center justify-between text-[11px]"
-                          >
-                            <span className="font-bold text-slate-200 truncate">{emp?.name}</span>
-                            <span className="text-slate-400 font-mono shrink-0">
-                              {DAYS_NAMES[sch.day_of_week]}: {sch.start_time.slice(0, 5)} - {sch.end_time.slice(0, 5)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                    {schedules.map((sch) => {
+                      const emp = employees.find((e) => e.id === sch.employee_id);
+                      return (
+                        <div
+                          key={sch.id}
+                          className="p-2 rounded-xl bg-slate-800/40 border border-slate-800 flex items-center justify-between text-[11px]"
+                        >
+                          <span className="font-bold text-slate-200 truncate">{emp?.name}</span>
+                          <span className="text-slate-400 font-mono shrink-0">
+                            {DAYS_NAMES[sch.day_of_week]}: {sch.start_time.slice(0, 5)} - {sch.end_time.slice(0, 5)}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {/* TAB BOT TELEGRAM */}
+              {/* TAB 5: TELEGRAM */}
               {activeTab === 'telegram' && (
                 <div className="space-y-3.5">
                   <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
@@ -689,7 +954,7 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                 </div>
               )}
 
-              {/* TAB AUTO-CIERRE */}
+              {/* TAB 6: AUTO-CIERRE */}
               {activeTab === 'autoclose' && (
                 <div className="space-y-3.5">
                   <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
@@ -716,43 +981,6 @@ CREATE POLICY "Public Write" ON attendance FOR ALL USING (true);`;
                         {autoCloseStatus}
                       </div>
                     )}
-                  </div>
-                </div>
-              )}
-
-              {/* TAB SUPABASE & VERCEL */}
-              {activeTab === 'supabase' && (
-                <div className="space-y-3.5">
-                  <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
-                    <h4 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
-                      <Database className="w-3.5 h-3.5 text-emerald-400" />
-                      Guía Ultra-Simple de Conexión
-                    </h4>
-
-                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
-                      <p className="text-slate-300 font-semibold mb-1">¿No quieres complicarte con Supabase?</p>
-                      <p className="text-slate-400 text-[11px] leading-relaxed">
-                        ¡No te preocupes! La aplicación funciona <strong>directamente y sin necesidad de configurar Supabase</strong>. Toda la información de tus 19 colaboradores y horarios ya está guardada de forma persistente y lista para usarse.
-                      </p>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-                      <p className="text-emerald-400 font-bold">Si deseas sincronizar con Supabase:</p>
-                      <p className="text-slate-400 text-[11px]">
-                        1. Entra a tu proyecto en supabase.com y abre el <strong>SQL Editor</strong>.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleCopySqlGuide}
-                        className="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg flex items-center gap-1.5 transition-colors font-mono text-[11px]"
-                      >
-                        {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copiedSql ? '¡SQL Copiado!' : 'Copiar Código SQL'}
-                      </button>
-                      <p className="text-slate-400 text-[11px]">
-                        2. Pégalo y dale clic a <strong>Run</strong>. ¡Y listo!
-                      </p>
-                    </div>
                   </div>
                 </div>
               )}
