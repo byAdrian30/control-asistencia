@@ -1,5 +1,7 @@
 # 📱 Control de Asistencia para Celular de Tienda
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FbyAdrian30%2Fcontrol-asistencia)
+
 Aplicación web progresiva (PWA / Mobile-First) diseñada específicamente para usarse en el **celular de tienda**, con almacenamiento de datos en **Supabase**, despliegue en **Vercel**, auto-deslogueo a la **1:00 AM** y notificaciones automáticas al bot de **Telegram al mediodía**.
 
 ---
