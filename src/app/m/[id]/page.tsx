@@ -31,7 +31,6 @@ import {
 } from '@/lib/mock-storage';
 import { getCurrentPosition, calculateDistanceMeters, formatDistance } from '@/lib/geo';
 import { getOrCreateDeviceId, getDeviceDescription } from '@/lib/device';
-import { checkBiometricsSupport, enrollBiometricCredential, verifyBiometricCredential } from '@/lib/biometrics';
 import { playSound, triggerVibration } from '@/lib/sound';
 import { calculateMinutesLate, formatHoursWorked } from '@/lib/late-calculator';
 import PinPad from '@/components/PinPad';
@@ -154,13 +153,6 @@ function PersonalPunchContent({ params }: PageProps) {
         }
       }
 
-      // Enrolar biometría si el celular tiene sensor
-      try {
-        await enrollBiometricCredential(employee.id, employee.name);
-      } catch {
-        // Silencioso si no soporta
-      }
-
       const updatedEmp: Employee = {
         ...employee,
         code: employee.has_custom_pin ? employee.code : confirmNewPin,
@@ -168,7 +160,7 @@ function PersonalPunchContent({ params }: PageProps) {
         registered_device_id: currentDeviceId,
         registered_device_name: currentDeviceDesc,
         registered_device_at: new Date().toISOString(),
-        biometric_enrolled: true,
+        biometric_enrolled: false,
       };
 
       const emps = getLocalEmployees();
@@ -227,21 +219,7 @@ function PersonalPunchContent({ params }: PageProps) {
       }
       setGpsLoading(false);
 
-      // B. VALIDACIÓN BIOMÉTRICA (Touch ID / Face ID)
-      if (config.require_biometrics && employee.biometric_enrolled) {
-        try {
-          const bioRes = await verifyBiometricCredential(employee.id);
-          if (!bioRes.success) {
-            setActionError('No se pudo verificar tu huella / Face ID.');
-            setIsSubmitting(false);
-            return;
-          }
-        } catch {
-          // Si el sensor falla, el PIN ya validó previamente
-        }
-      }
-
-      // C. REGISTRAR MARCACIÓN
+      // B. REGISTRAR MARCACIÓN
       const now = new Date();
       let minutesLate = 0;
       if (targetAction === 'in' && schedule) {

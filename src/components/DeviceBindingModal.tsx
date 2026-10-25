@@ -5,7 +5,6 @@ import { Smartphone, ShieldCheck, KeyRound, Sparkles, AlertTriangle, X, CheckCir
 import { Employee } from '@/types/database';
 import PinPad from './PinPad';
 import { playSound, triggerVibration } from '@/lib/sound';
-import { enrollBiometricCredential } from '@/lib/biometrics';
 
 interface DeviceBindingModalProps {
   employee: Employee;
@@ -53,13 +52,6 @@ export default function DeviceBindingModal({
     setErrorMsg(null);
 
     try {
-      // Intentar enrolar biometría si el celular tiene sensor
-      try {
-        await enrollBiometricCredential(employee.id, employee.name);
-      } catch {
-        // Silencioso si no es compatible
-      }
-
       const ok = await onBindSuccess(employee.id, confirmPin);
       if (ok) {
         playSound('in');

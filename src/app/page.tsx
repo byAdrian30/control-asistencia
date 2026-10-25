@@ -163,7 +163,7 @@ export default function AttendanceHomePage() {
             registered_device_id: curDevId,
             registered_device_name: curDevDesc,
             registered_device_at: new Date().toISOString(),
-            biometric_enrolled: true,
+            biometric_enrolled: false,
           };
         }
         return emp;

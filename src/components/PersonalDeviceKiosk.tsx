@@ -20,7 +20,6 @@ import { Employee, Attendance, Schedule, SystemConfig } from '@/types/database';
 import PinPad from './PinPad';
 import { playSound, triggerVibration } from '@/lib/sound';
 import { getCurrentPosition, calculateDistanceMeters, formatDistance } from '@/lib/geo';
-import { verifyBiometricCredential } from '@/lib/biometrics';
 import { calculateMinutesLate, formatHoursWorked } from '@/lib/late-calculator';
 
 interface PersonalDeviceKioskProps {
@@ -126,21 +125,7 @@ export default function PersonalDeviceKiosk({
       }
       setGpsLoading(false);
 
-      // 3. VALIDACIÓN BIOMÉTRICA (TouchID / FaceID Opcional)
-      if (config.require_biometrics && employee.biometric_enrolled) {
-        try {
-          const bioRes = await verifyBiometricCredential(employee.id);
-          if (!bioRes.success) {
-            setErrorMsg('No se completó la verificación biométrica.');
-            setIsSubmitting(false);
-            return;
-          }
-        } catch {
-          // Si el sensor no responde, el PIN y el dispositivo ya validaron
-        }
-      }
-
-      // 4. REGISTRAR MARCACIÓN
+      // 3. REGISTRAR MARCACIÓN
       const now = new Date();
       let minutesLate = 0;
       if (targetAction === 'in' && schedule) {

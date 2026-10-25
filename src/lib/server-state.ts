@@ -11,6 +11,7 @@ export let currentServerConfig: SystemConfig = {
   radius_meters: 250,
   store_location_name: 'Shimaya Ramen - Mall Aventura Chiclayo',
   require_gps: false, // Desactivado por hoy para permitir inicio de jornada sin bloqueos
+  require_biometrics: false,
 };
 
 export function setServerConfig(newConfig: Partial<SystemConfig>) {

@@ -271,7 +271,7 @@ export const DEFAULT_CONFIG: SystemConfig = {
   store_location_name: 'Shimaya Ramen - Mall Aventura Chiclayo',
   require_gps: false, // Flexible por hoy para permitir a todos iniciar su jornada sin bloqueos
   require_device_match: true,
-  require_biometrics: true,
+  require_biometrics: false,
 };
 
 const STORAGE_KEYS = {
