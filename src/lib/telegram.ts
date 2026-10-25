@@ -46,24 +46,31 @@ export async function sendTelegramMessage(params: {
 
 /**
  * Genera el reporte formateado en Markdown para Telegram con las tardanzas del mediodía
+ * e indicador de pérdida del 100% de Chippu (al acumular 10 minutos en la quincena)
  */
 export function buildLateReportMessage(params: {
   storeName: string;
   dateStr: string;
+  quincenaLabel?: string;
   lateRecords: Array<{
     name: string;
     clockInTime: string;
     expectedTime: string;
     minutesLate: number;
+    quincenaTotalMinutes?: number;
+    lostChippu?: boolean;
   }>;
   onTimeCount: number;
   totalPresent: number;
 }): string {
-  const { storeName, dateStr, lateRecords, onTimeCount, totalPresent } = params;
+  const { storeName, dateStr, quincenaLabel, lateRecords, onTimeCount, totalPresent } = params;
 
   let msg = `🏪 *REPORTE DE ASISTENCIA - MEDIODÍA*\n`;
   msg += `📍 *Tienda:* ${storeName}\n`;
   msg += `📅 *Fecha:* ${dateStr}\n`;
+  if (quincenaLabel) {
+    msg += `🗓️ *Periodo:* ${quincenaLabel}\n`;
+  }
   msg += `👥 *Personal Marcado:* ${totalPresent} colaboradores\n\n`;
 
   if (lateRecords.length === 0) {
@@ -74,12 +81,23 @@ export function buildLateReportMessage(params: {
     lateRecords.forEach((item, index) => {
       msg += `\n${index + 1}. *${item.name}*\n`;
       msg += `   ⏰ Entrada: \`${item.clockInTime}\` (Esperado: ${item.expectedTime})\n`;
-      msg += `   🚨 *Tardanza: +${item.minutesLate} minutos*\n`;
+      msg += `   ⏱️ *Tardanza hoy: +${item.minutesLate} min*\n`;
+      if (item.quincenaTotalMinutes !== undefined) {
+        if (item.lostChippu) {
+          msg += `   🚨 *¡PERDIÓ EL 100% DE SU CHIPPU!* (Acumulado: ${item.quincenaTotalMinutes}/10 min)\n`;
+        } else {
+          msg += `   🟡 *Chippu:* Acumula ${item.quincenaTotalMinutes}/10 min en la quincena\n`;
+        }
+      }
     });
 
-    msg += `\n📊 *Resumen:* ${lateRecords.length} tardanza(s), ${onTimeCount} a tiempo.`;
+    const lostChippuCount = lateRecords.filter((r) => r.lostChippu).length;
+    msg += `\n📊 *Resumen:* ${lateRecords.length} con tardanza, ${onTimeCount} puntuales.`;
+    if (lostChippuCount > 0) {
+      msg += `\n❌ *Colaboradores sin Chippu en la quincena:* ${lostChippuCount}`;
+    }
   }
 
-  msg += `\n\n_Mensaje generado automáticamente por el Sistema de Asistencia._`;
+  msg += `\n\n_Mensaje generado automáticamente por el Sistema de Asistencia Shimaya Ramen._`;
   return msg;
 }

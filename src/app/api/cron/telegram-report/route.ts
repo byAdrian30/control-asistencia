@@ -6,6 +6,8 @@ import {
   formatPeruTime,
   formatPeruDate,
   getPeruDateTime,
+  getQuincenaRange,
+  calculateQuincenaTardiness,
 } from '@/lib/late-calculator';
 import { Employee, Schedule, Attendance } from '@/types/database';
 import { serverAttendances } from '@/lib/server-state';
@@ -48,6 +50,7 @@ async function handleTelegramReport(req: NextRequest) {
     const now = new Date();
     const peruNow = getPeruDateTime(now);
     const dateStr = formatPeruDate(now);
+    const quincena = getQuincenaRange(now);
 
     // Rango de hoy en hora Perú (America/Lima) convertido a UTC
     const todayStart = new Date(Date.UTC(peruNow.year, peruNow.month - 1, peruNow.day, 5, 0, 0)).toISOString();
@@ -58,6 +61,8 @@ async function handleTelegramReport(req: NextRequest) {
       clockInTime: string;
       expectedTime: string;
       minutesLate: number;
+      quincenaTotalMinutes?: number;
+      lostChippu?: boolean;
     }> = [];
     let onTimeCount = 0;
     let totalPresent = 0;
@@ -103,11 +108,14 @@ async function handleTelegramReport(req: NextRequest) {
         }
 
         if (lateMin > 0) {
+          const qCalc = calculateQuincenaTardiness(att.employee_id, records, 0, att.clock_in);
           lateRecords.push({
             name: empName,
             clockInTime: timeStr,
             expectedTime: expectedStr,
             minutesLate: lateMin,
+            quincenaTotalMinutes: qCalc.totalMinutes,
+            lostChippu: qCalc.lostChippu,
           });
         } else {
           onTimeCount++;
@@ -139,11 +147,14 @@ async function handleTelegramReport(req: NextRequest) {
         }
 
         if (lateMin > 0) {
+          const qCalc = calculateQuincenaTardiness(att.employee_id, serverAttendances, 0, att.clock_in);
           lateRecords.push({
             name: empName,
             clockInTime: timeStr,
             expectedTime: expectedStr,
             minutesLate: lateMin,
+            quincenaTotalMinutes: qCalc.totalMinutes,
+            lostChippu: qCalc.lostChippu,
           });
         } else {
           onTimeCount++;
@@ -155,6 +166,7 @@ async function handleTelegramReport(req: NextRequest) {
     const message = buildLateReportMessage({
       storeName,
       dateStr,
+      quincenaLabel: quincena.label,
       lateRecords,
       onTimeCount,
       totalPresent,

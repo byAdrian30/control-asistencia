@@ -37,6 +37,7 @@ import {
   formatHoursWorked,
   getPeruDateTime,
   formatPeruTime,
+  calculateQuincenaTardiness,
 } from '@/lib/late-calculator';
 import PinPad from '@/components/PinPad';
 
@@ -78,6 +79,8 @@ function PersonalPunchContent({ params }: PageProps) {
     distance?: number;
     minutesLate?: number;
     hoursWorked?: string;
+    quincenaLate?: number;
+    lostChippu?: boolean;
   } | null>(null);
 
   // Cargar datos
@@ -304,12 +307,21 @@ function PersonalPunchContent({ params }: PageProps) {
         hoursWorked = formatHoursWorked(activeAttendance.clock_in, now.toISOString());
       }
 
+      const qCalc = calculateQuincenaTardiness(
+        employee.id,
+        newAttList,
+        0,
+        now
+      );
+
       setSuccessInfo({
         action: targetAction,
         timeStr,
         distance: distanceMeters,
         minutesLate,
         hoursWorked,
+        quincenaLate: qCalc.totalMinutes,
+        lostChippu: qCalc.lostChippu,
       });
 
       setTimeout(() => {
@@ -425,10 +437,25 @@ function PersonalPunchContent({ params }: PageProps) {
 
               {successInfo.minutesLate !== undefined && successInfo.minutesLate > 0 && (
                 <div className="mt-2 text-xs">
-                  <span className="inline-flex items-center gap-1 text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/30">
+                  <span className="inline-flex items-center gap-1 text-amber-400 font-bold bg-amber-400/10 px-2.5 py-0.5 rounded-full border border-amber-400/30">
                     <AlertTriangle className="w-3.5 h-3.5" />
-                    +{successInfo.minutesLate}m de tardanza
+                    +{successInfo.minutesLate}m de tardanza hoy
                   </span>
+                </div>
+              )}
+
+              {successInfo.quincenaLate !== undefined && successInfo.quincenaLate > 0 && (
+                <div className="mt-2.5 pt-2 border-t border-slate-700/60">
+                  {successInfo.lostChippu ? (
+                    <div className="p-2 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold leading-tight">
+                      🚨 Acumulas {successInfo.quincenaLate} min de tardanza en la quincena.<br />
+                      <span className="text-white">Has perdido el 100% de tu Chippu.</span>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-amber-300 bg-amber-500/10 p-2 rounded-xl border border-amber-500/20">
+                      ⏱️ Chippu: {successInfo.quincenaLate} / 10 min acumulados en la quincena.
+                    </div>
+                  )}
                 </div>
               )}
 

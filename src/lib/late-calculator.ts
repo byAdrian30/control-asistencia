@@ -19,7 +19,6 @@ export function getPeruDateTime(dateInput?: Date | string | null): {
       : dateInput
     : new Date();
 
-  // Usar Intl con zona horaria America/Lima
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Lima',
     year: 'numeric',
@@ -96,15 +95,22 @@ export function formatPeruDate(dateInput?: Date | string | null): string {
 
 /**
  * Calcula los minutos de tardanza comparando la hora de marcación en hora Perú con el horario programado.
- * @param clockInDate Fecha y hora de la marcación (Date o string ISO)
- * @param schedule Horario asignado para el empleado
+ * REGLA SHIMAYA: Los minutos de tardanza SIEMPRE se computan si la marcación ocurre después de la hora programada,
+ * sin importar si está dentro del margen de cortesía de tolerancia.
+ * 
+ * Ejemplo: Horario 11:00 AM, entrada 11:04 AM -> 4 minutos de tardanza.
  */
 export function calculateMinutesLate(
   clockInDate: Date | string,
   schedule?: Schedule | null
-): { minutesLate: number; isLate: boolean; details: string } {
+): { minutesLate: number; isLate: boolean; details: string; withinTolerance: boolean } {
   if (!schedule || !schedule.is_active || !schedule.start_time) {
-    return { minutesLate: 0, isLate: false, details: 'Sin horario fijo asignado' };
+    return {
+      minutesLate: 0,
+      isLate: false,
+      details: 'Sin horario fijo asignado',
+      withinTolerance: true,
+    };
   }
 
   // Obtener hora y minutos reales en hora Perú (America/Lima)
@@ -117,19 +123,111 @@ export function calculateMinutesLate(
   const tolerance = schedule.tolerance_minutes ?? 10;
   const limitTotalMinutes = targetTotalMinutes + tolerance;
 
-  if (actualTotalMinutes > limitTotalMinutes) {
+  if (actualTotalMinutes > targetTotalMinutes) {
     const lateMinutes = actualTotalMinutes - targetTotalMinutes;
+    const isWithinTolerance = actualTotalMinutes <= limitTotalMinutes;
     return {
       minutesLate: lateMinutes,
       isLate: true,
-      details: `Llegó ${lateMinutes} min tarde (Horario: ${schedule.start_time.slice(0, 5)}, tolerancia: ${tolerance}m)`,
+      withinTolerance: isWithinTolerance,
+      details: isWithinTolerance
+        ? `Llegó +${lateMinutes}m tarde (Dentro de cortesía de ${tolerance}m)`
+        : `Llegó +${lateMinutes}m tarde (Excedió cortesía de ${tolerance}m)`,
     };
   }
 
   return {
     minutesLate: 0,
     isLate: false,
-    details: `A tiempo (Horario: ${schedule.start_time.slice(0, 5)})`,
+    withinTolerance: true,
+    details: `Puntual (Horario: ${schedule.start_time.slice(0, 5)})`,
+  };
+}
+
+/**
+ * Retorna los rangos de la quincena actual en hora oficial de Perú:
+ * - 1ra Quincena: Días 1 al 15 del mes.
+ * - 2da Quincena: Días 16 al último día del mes.
+ */
+export interface QuincenaInfo {
+  startIso: string;
+  endIso: string;
+  quincenaNumber: 1 | 2;
+  monthName: string;
+  year: number;
+  label: string;
+}
+
+export function getQuincenaRange(dateInput?: Date | string | null): QuincenaInfo {
+  const peru = getPeruDateTime(dateInput);
+  const isFirstQuincena = peru.day <= 15;
+  const quincenaNumber: 1 | 2 = isFirstQuincena ? 1 : 2;
+
+  const startDay = isFirstQuincena ? 1 : 16;
+  const endDay = isFirstQuincena ? 15 : new Date(peru.year, peru.month, 0).getDate();
+
+  // En hora Perú (UTC-5):
+  const startIso = new Date(Date.UTC(peru.year, peru.month - 1, startDay, 5, 0, 0)).toISOString();
+  const endIso = new Date(Date.UTC(peru.year, peru.month - 1, endDay + 1, 4, 59, 59)).toISOString();
+
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+  ];
+  const monthName = monthNames[peru.month - 1];
+  const label = `${quincenaNumber === 1 ? '1ra' : '2da'} Quincena de ${monthName} ${peru.year}`;
+
+  return {
+    startIso,
+    endIso,
+    quincenaNumber,
+    monthName,
+    year: peru.year,
+    label,
+  };
+}
+
+/**
+ * Calcula los minutos de tardanza acumulados en la quincena para un colaborador
+ * y verifica la regla de pérdida del 100% de Chippu al llegar a 10 minutos.
+ */
+export function calculateQuincenaTardiness(
+  employeeId: string,
+  attendances: Array<{ employee_id: string; clock_in: string; minutes_late?: number | null }>,
+  additionalMinutes: number = 0,
+  referenceDate?: Date | string | null
+): {
+  totalMinutes: number;
+  lostChippu: boolean;
+  remainingMinutes: number;
+  quincenaLabel: string;
+} {
+  const quincena = getQuincenaRange(referenceDate);
+  const startTime = new Date(quincena.startIso).getTime();
+  const endTime = new Date(quincena.endIso).getTime();
+
+  let totalMinutes = 0;
+
+  attendances.forEach((att) => {
+    if (att.employee_id === employeeId && att.clock_in) {
+      const attTime = new Date(att.clock_in).getTime();
+      if (attTime >= startTime && attTime <= endTime) {
+        totalMinutes += att.minutes_late || 0;
+      }
+    }
+  });
+
+  totalMinutes += additionalMinutes;
+
+  const CHIPPU_LIMIT = 10;
+  const lostChippu = totalMinutes >= CHIPPU_LIMIT;
+  const remainingMinutes = Math.max(0, CHIPPU_LIMIT - totalMinutes);
+
+  return {
+    totalMinutes,
+    lostChippu,
+    remainingMinutes,
+    quincenaLabel: quincena.label,
   };
 }
 
