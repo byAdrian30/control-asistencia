@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   X,
   Users,
@@ -92,13 +92,68 @@ export default function AdminModal({
   const [telegramStatus, setTelegramStatus] = useState<string | null>(null);
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
 
-  // Estados de GPS Mall Aventura
-  const [mallLat, setMallLat] = useState(config.mall_lat || -12.0558);
-  const [mallLng, setMallLng] = useState(config.mall_lng || -76.9715);
-  const [mallRadius, setMallRadius] = useState(config.radius_meters || 180);
-  const [mallName, setMallName] = useState(config.store_location_name || 'Shimaya Ramen - Mall Aventura');
+  // Estados de GPS Mall Aventura (Por defecto: Mall Aventura Chiclayo)
+  const [mallLat, setMallLat] = useState(config.mall_lat || -6.76329);
+  const [mallLng, setMallLng] = useState(config.mall_lng || -79.86164);
+  const [mallRadius, setMallRadius] = useState(config.radius_meters || 250);
+  const [mallName, setMallName] = useState(config.store_location_name || 'Shimaya Ramen - Mall Aventura Chiclayo');
   const [calibratingGps, setCalibratingGps] = useState(false);
   const [geoStatusMsg, setGeoStatusMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (config.mall_lat) setMallLat(config.mall_lat);
+    if (config.mall_lng) setMallLng(config.mall_lng);
+    if (config.radius_meters) setMallRadius(config.radius_meters);
+    if (config.store_location_name) setMallName(config.store_location_name);
+  }, [config]);
+
+  const MALL_PRESETS = [
+    {
+      name: 'Mall Aventura Chiclayo (Actual)',
+      lat: -6.76329,
+      lng: -79.86164,
+      radius: 250,
+      fullName: 'Shimaya Ramen - Mall Aventura Chiclayo',
+    },
+    {
+      name: 'Mall Aventura Santa Anita (Lima)',
+      lat: -12.0558,
+      lng: -76.9715,
+      radius: 250,
+      fullName: 'Shimaya Ramen - Mall Aventura Santa Anita',
+    },
+    {
+      name: 'Mall Aventura SJL (Lima)',
+      lat: -11.9961,
+      lng: -76.9942,
+      radius: 250,
+      fullName: 'Shimaya Ramen - Mall Aventura SJL',
+    },
+    {
+      name: 'Mall Aventura Arequipa',
+      lat: -16.4258,
+      lng: -71.5167,
+      radius: 250,
+      fullName: 'Shimaya Ramen - Mall Aventura Arequipa',
+    },
+  ];
+
+  const handleApplyPreset = (preset: (typeof MALL_PRESETS)[0]) => {
+    setMallLat(preset.lat);
+    setMallLng(preset.lng);
+    setMallRadius(preset.radius);
+    setMallName(preset.fullName);
+    const newConfig: SystemConfig = {
+      ...config,
+      mall_lat: preset.lat,
+      mall_lng: preset.lng,
+      radius_meters: preset.radius,
+      store_location_name: preset.fullName,
+    };
+    onSaveConfig(newConfig);
+    setGeoStatusMsg(`✅ Ubicación configurada a: ${preset.name}`);
+    setTimeout(() => setGeoStatusMsg(null), 3500);
+  };
 
   // Copiado de links
   const [copiedLinkIndex, setCopiedLinkIndex] = useState<string | null>(null);
@@ -556,6 +611,38 @@ export default function AdminModal({
                       El sistema solo permite marcar cuando el celular del colaborador se encuentra físicamente dentro del radio de <strong>Shimaya Ramen en Mall Aventura</strong>.
                     </p>
 
+                    {/* Presets Rápidos */}
+                    <div className="pt-1">
+                      <label className="text-[10px] text-slate-400 block mb-1.5 font-bold">
+                        Sedes Disponibles (Seleccionar con 1 Toque):
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {MALL_PRESETS.map((p) => {
+                          const isSelected = Math.abs(mallLat - p.lat) < 0.001 && Math.abs(mallLng - p.lng) < 0.001;
+                          return (
+                            <button
+                              key={p.name}
+                              type="button"
+                              onClick={() => handleApplyPreset(p)}
+                              className={`p-2 rounded-xl text-left border transition-all text-xs flex items-center justify-between ${
+                                isSelected
+                                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
+                                  : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:border-slate-500'
+                              }`}
+                            >
+                              <div>
+                                <div className="text-white text-[11px] font-semibold">{p.name}</div>
+                                <div className="text-[9px] text-slate-400 font-mono">
+                                  {p.lat.toFixed(5)}, {p.lng.toFixed(5)} ({p.radius}m)
+                                </div>
+                              </div>
+                              {isSelected && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                       <div>
                         <label className="text-[10px] text-slate-400 block mb-1">Nombre del Local</label>
@@ -582,7 +669,7 @@ export default function AdminModal({
                         />
                         <div className="flex justify-between text-[10px] text-slate-500 font-mono">
                           <span>50m (Muy estricto)</span>
-                          <span>180m (Recomendado Mall)</span>
+                          <span>250m (Recomendado Mall Chiclayo)</span>
                           <span>500m</span>
                         </div>
                       </div>

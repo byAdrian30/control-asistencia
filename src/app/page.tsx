@@ -95,7 +95,19 @@ export default function AttendanceHomePage() {
     setEmployees(loadedEmps);
     setAttendances(loadedAtts);
     setSchedules(loadedSchs);
-    setConfig(getLocalConfig());
+    const initialLocalConfig = getLocalConfig();
+    setConfig(initialLocalConfig);
+
+    // Sincronizar configuración con el servidor
+    fetch('/api/config')
+      .then((r) => r.json())
+      .then((srvCfg) => {
+        if (srvCfg && srvCfg.mall_lat) {
+          setConfig(srvCfg);
+          saveLocalConfig(srvCfg);
+        }
+      })
+      .catch(() => {});
 
     // Detectar si este celular ya está vinculado a un colaborador
     const curDevId = getOrCreateDeviceId();
@@ -352,9 +364,18 @@ export default function AttendanceHomePage() {
     saveLocalSchedules(updated);
   };
 
-  const handleSaveConfig = (newConfig: SystemConfig) => {
+  const handleSaveConfig = async (newConfig: SystemConfig) => {
     setConfig(newConfig);
     saveLocalConfig(newConfig);
+    try {
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig),
+      });
+    } catch {
+      // Ignorar si falla la sincronización de red
+    }
   };
 
   const handleTriggerAutoCheckout = async (): Promise<string> => {

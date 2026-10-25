@@ -27,6 +27,7 @@ import {
   saveLocalAttendance,
   getLocalSchedules,
   getLocalConfig,
+  saveLocalConfig,
 } from '@/lib/mock-storage';
 import { getCurrentPosition, calculateDistanceMeters, formatDistance } from '@/lib/geo';
 import { getOrCreateDeviceId, getDeviceDescription } from '@/lib/device';
@@ -78,6 +79,17 @@ function PersonalPunchContent({ params }: PageProps) {
   // Cargar datos
   useEffect(() => {
     setIsMounted(true);
+    // Sincronizar configuración con el servidor
+    fetch('/api/config')
+      .then((r) => r.json())
+      .then((srvCfg) => {
+        if (srvCfg && srvCfg.mall_lat) {
+          setConfig(srvCfg);
+          saveLocalConfig(srvCfg);
+        }
+      })
+      .catch(() => {});
+
     const emps = getLocalEmployees();
     const target = emps.find(
       (e) => e.id === employeeIdentifier || e.slug === employeeIdentifier

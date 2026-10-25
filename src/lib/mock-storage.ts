@@ -264,11 +264,11 @@ export const DEFAULT_CONFIG: SystemConfig = {
   telegram_chat_id: '',
   auto_checkout_hour: 1,
   timezone_offset: -5,
-  // Coordenadas de Mall Aventura Santa Anita (-12.0558, -76.9715)
-  mall_lat: -12.0558,
-  mall_lng: -76.9715,
-  radius_meters: 180, // Radio generoso para cubrir la zona del mall
-  store_location_name: 'Shimaya Ramen - Mall Aventura',
+  // Coordenadas exactas de Shimaya Ramen - Mall Aventura Chiclayo (Av. Panamericana Norte 639)
+  mall_lat: -6.76329,
+  mall_lng: -79.86164,
+  radius_meters: 250, // Radio generoso (250m) para cubrir la zona del mall e interiores de cocina
+  store_location_name: 'Shimaya Ramen - Mall Aventura Chiclayo',
   require_gps: true,
   require_device_match: true,
   require_biometrics: true,
@@ -348,7 +348,20 @@ export const getLocalConfig = (): SystemConfig => {
     return DEFAULT_CONFIG;
   }
   try {
-    return { ...DEFAULT_CONFIG, ...JSON.parse(saved) };
+    const parsed: SystemConfig = { ...DEFAULT_CONFIG, ...JSON.parse(saved) };
+
+    // Auto-migración si el dispositivo tiene en caché las coordenadas antiguas de Lima (< -10):
+    // Esto fuerza la actualización instantánea a Mall Aventura Chiclayo (-6.76329, -79.86164)
+    // para resolver el error "a 600 km de lejos" en los celulares de todo el equipo.
+    if (!parsed.mall_lat || parsed.mall_lat < -10 || parsed.store_location_name?.includes('Santa Anita')) {
+      parsed.mall_lat = -6.76329;
+      parsed.mall_lng = -79.86164;
+      parsed.radius_meters = 250;
+      parsed.store_location_name = 'Shimaya Ramen - Mall Aventura Chiclayo';
+      localStorage.setItem(STORAGE_KEYS.CONFIG_V3, JSON.stringify(parsed));
+    }
+
+    return parsed;
   } catch {
     return DEFAULT_CONFIG;
   }
