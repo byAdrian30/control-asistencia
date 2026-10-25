@@ -269,7 +269,7 @@ export const DEFAULT_CONFIG: SystemConfig = {
   mall_lng: -79.86164,
   radius_meters: 250, // Radio generoso (250m) para cubrir la zona del mall e interiores de cocina
   store_location_name: 'Shimaya Ramen - Mall Aventura Chiclayo',
-  require_gps: true,
+  require_gps: false, // Flexible por hoy para permitir a todos iniciar su jornada sin bloqueos
   require_device_match: true,
   require_biometrics: true,
 };
@@ -358,6 +358,7 @@ export const getLocalConfig = (): SystemConfig => {
       parsed.mall_lng = -79.86164;
       parsed.radius_meters = 250;
       parsed.store_location_name = 'Shimaya Ramen - Mall Aventura Chiclayo';
+      parsed.require_gps = false;
       localStorage.setItem(STORAGE_KEYS.CONFIG_V3, JSON.stringify(parsed));
     }
 

@@ -102,41 +102,31 @@ export default function PersonalDeviceKiosk({
     setGpsLoading(true);
 
     try {
-      // 2. VALIDACIÓN DE GPS EN MALL AVENTURA
+      // 2. VALIDACIÓN DE GPS EN MALL AVENTURA (FLEXIBLE: NO BLOQUEA EL INICIO DE JORNADA)
       let coords = { latitude: 0, longitude: 0 };
       let distanceMeters = 0;
+      let gpsVerified = false;
 
-      if (config.require_gps) {
-        try {
-          coords = await getCurrentPosition();
-          distanceMeters = calculateDistanceMeters(
-            coords.latitude,
-            coords.longitude,
-            config.mall_lat,
-            config.mall_lng
-          );
-
-          if (distanceMeters > config.radius_meters) {
-            playSound('error');
-            triggerVibration([150, 100, 150]);
-            setGpsError(
-              `Estás a ${formatDistance(distanceMeters)} de Shimaya Ramen (${config.store_location_name}). Debes estar físicamente dentro del local (radio máx: ${config.radius_meters}m) para marcar.`
-            );
-            setIsSubmitting(false);
-            setGpsLoading(false);
-            return;
-          }
-        } catch (geoErr: unknown) {
-          const msg = geoErr instanceof Error ? geoErr.message : String(geoErr);
-          setGpsError(msg);
-          setIsSubmitting(false);
-          setGpsLoading(false);
-          return;
+      try {
+        coords = await getCurrentPosition();
+        distanceMeters = calculateDistanceMeters(
+          coords.latitude,
+          coords.longitude,
+          config.mall_lat,
+          config.mall_lng
+        );
+        if (distanceMeters <= config.radius_meters) {
+          gpsVerified = true;
+        } else {
+          console.warn(`GPS detectado a ${formatDistance(distanceMeters)}, permitido por inicio de jornada.`);
         }
+      } catch (geoErr: unknown) {
+        // Si el sensor no capta satélites bajo techo en el mall, permitimos marcar
+        console.warn('GPS satelital no disponible bajo techo:', geoErr);
       }
       setGpsLoading(false);
 
-      // 3. VALIDACIÓN BIOMÉTRICA (TouchID / FaceID)
+      // 3. VALIDACIÓN BIOMÉTRICA (TouchID / FaceID Opcional)
       if (config.require_biometrics && employee.biometric_enrolled) {
         try {
           const bioRes = await verifyBiometricCredential(employee.id);
@@ -360,13 +350,13 @@ export default function PersonalDeviceKiosk({
             </div>
           </div>
 
-          {/* Badge de Seguridad: Celular y GPS Mall Aventura */}
+          {/* Badge de Seguridad: Celular Verificado */}
           <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 flex items-start gap-2.5">
-            <Navigation className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold text-white">Validación Doble: Celular + GPS Mall Aventura</p>
+              <p className="font-bold text-white">Dispositivo Autorizado ({currentDeviceDesc})</p>
               <p className="text-[11px] text-slate-300 mt-0.5">
-                Este equipo ({currentDeviceDesc}) está vinculado a tu cuenta. Solo podrás marcar dentro de <strong>{config.store_location_name}</strong>.
+                Equipo vinculado a tu cuenta de <strong>Shimaya Ramen</strong>. Listo para iniciar o cerrar jornada.
               </p>
             </div>
           </div>

@@ -3,6 +3,8 @@ import { getServiceSupabase } from '@/lib/supabase';
 import { buildLateReportMessage, sendTelegramMessage } from '@/lib/telegram';
 import { calculateMinutesLate } from '@/lib/late-calculator';
 import { Employee, Schedule, Attendance } from '@/types/database';
+import { serverAttendances } from '@/lib/server-state';
+import { INITIAL_EMPLOYEES, INITIAL_SCHEDULES } from '@/lib/mock-storage';
 
 export async function GET(req: NextRequest) {
   return handleTelegramReport(req);
@@ -117,17 +119,47 @@ async function handleTelegramReport(req: NextRequest) {
         }
       });
     } else {
-      // Datos de ejemplo para prueba si Supabase no está conectado todavía
-      lateRecords = [
-        {
-          name: 'Mateo Salazar',
-          clockInTime: '10:24 AM',
-          expectedTime: '10:00 AM',
-          minutesLate: 24,
-        },
-      ];
-      onTimeCount = 3;
-      totalPresent = 4;
+      // Usar marcaciones reales almacenadas en la memoria central del servidor
+      const employeeMap = new Map<string, Employee>();
+      INITIAL_EMPLOYEES.forEach((e) => employeeMap.set(e.id, e));
+
+      const currentDayOfWeek = now.getDay();
+      const scheduleMap = new Map<string, Schedule>();
+      INITIAL_SCHEDULES.filter((s) => s.day_of_week === currentDayOfWeek && s.is_active).forEach((s) =>
+        scheduleMap.set(s.employee_id, s)
+      );
+
+      totalPresent = serverAttendances.length;
+
+      serverAttendances.forEach((att) => {
+        const emp = employeeMap.get(att.employee_id);
+        const empName = emp ? emp.name : 'Colaborador';
+        const sch = scheduleMap.get(att.employee_id);
+        const clockInDate = new Date(att.clock_in);
+        const timeStr = clockInDate.toLocaleTimeString('es-PE', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
+
+        let lateMin = att.minutes_late;
+        let expectedStr = sch?.start_time ? sch.start_time.slice(0, 5) : 'Sin horario';
+        if (sch) {
+          const calc = calculateMinutesLate(clockInDate, sch);
+          lateMin = calc.minutesLate;
+        }
+
+        if (lateMin > 0) {
+          lateRecords.push({
+            name: empName,
+            clockInTime: timeStr,
+            expectedTime: expectedStr,
+            minutesLate: lateMin,
+          });
+        } else {
+          onTimeCount++;
+        }
+      });
     }
 
     // 4. Construir y enviar mensaje Telegram

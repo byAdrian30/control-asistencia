@@ -109,6 +109,25 @@ export default function AttendanceHomePage() {
       })
       .catch(() => {});
 
+    // Sincronizar marcaciones centrales con el servidor
+    fetch('/api/attendance')
+      .then((r) => r.json())
+      .then((serverAtts: Attendance[]) => {
+        if (Array.isArray(serverAtts) && serverAtts.length > 0) {
+          setAttendances((prev) => {
+            const map = new Map<string, Attendance>();
+            prev.forEach((a) => map.set(a.id, a));
+            serverAtts.forEach((a) => map.set(a.id, a));
+            const merged = Array.from(map.values()).sort(
+              (a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime()
+            );
+            saveLocalAttendance(merged);
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+
     // Detectar si este celular ya está vinculado a un colaborador
     const curDevId = getOrCreateDeviceId();
     const curDevDesc = getDeviceDescription();
@@ -286,6 +305,11 @@ export default function AttendanceHomePage() {
         const updated = [newRecord, ...attendances];
         setAttendances(updated);
         saveLocalAttendance(updated);
+        fetch('/api/attendance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newRecord),
+        }).catch(() => {});
       } else {
         const updated = attendances.map((a) => {
           if (a.id === payload.attendanceId || (a.employee_id === payload.employeeId && !a.clock_out)) {
@@ -300,6 +324,16 @@ export default function AttendanceHomePage() {
         });
         setAttendances(updated);
         saveLocalAttendance(updated);
+        const updatedRecord = updated.find(
+          (a) => a.id === payload.attendanceId || (a.employee_id === payload.employeeId && a.clock_out === nowIso)
+        );
+        if (updatedRecord) {
+          fetch('/api/attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedRecord),
+          }).catch(() => {});
+        }
       }
       return true;
     }

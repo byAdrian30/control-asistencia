@@ -206,39 +206,24 @@ function PersonalPunchContent({ params }: PageProps) {
     setGpsLoading(true);
 
     try {
-      // A. OBTENER GPS EN TIEMPO REAL
+      // A. OBTENER GPS EN TIEMPO REAL (FLEXIBLE: NO BLOQUEA EL INICIO DE JORNADA)
       let coords = { latitude: 0, longitude: 0 };
       let distanceMeters = 0;
 
-      if (config.require_gps) {
-        try {
-          coords = await getCurrentPosition();
-          distanceMeters = calculateDistanceMeters(
-            coords.latitude,
-            coords.longitude,
-            config.mall_lat,
-            config.mall_lng
-          );
-          setCurrentDistance(distanceMeters);
-
-          // VERIFICAR GEOVALLA (MALL AVENTURA - SHIMAYA RAMEN)
-          if (distanceMeters > config.radius_meters) {
-            playSound('error');
-            triggerVibration([150, 100, 150]);
-            setGpsError(
-              `Estás a ${formatDistance(distanceMeters)} de Shimaya Ramen (${config.store_location_name}). Debes estar dentro del local (radio máx. ${config.radius_meters}m) para marcar.`
-            );
-            setIsSubmitting(false);
-            setGpsLoading(false);
-            return;
-          }
-        } catch (geoErr: unknown) {
-          const msg = geoErr instanceof Error ? geoErr.message : String(geoErr);
-          setGpsError(msg);
-          setIsSubmitting(false);
-          setGpsLoading(false);
-          return;
+      try {
+        coords = await getCurrentPosition();
+        distanceMeters = calculateDistanceMeters(
+          coords.latitude,
+          coords.longitude,
+          config.mall_lat,
+          config.mall_lng
+        );
+        setCurrentDistance(distanceMeters);
+        if (distanceMeters > config.radius_meters) {
+          console.warn(`GPS detectado a ${formatDistance(distanceMeters)}, permitido por inicio de jornada.`);
         }
+      } catch (geoErr: unknown) {
+        console.warn('GPS no disponible bajo techo:', geoErr);
       }
       setGpsLoading(false);
 
@@ -286,6 +271,11 @@ function PersonalPunchContent({ params }: PageProps) {
           notes: minutesLate > 0 ? `Entrada con ${minutesLate}m de tardanza` : 'Marcación móvil verificada',
         };
         newAttList = [newRecord, ...allAtts];
+        fetch('/api/attendance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newRecord),
+        }).catch(() => {});
         playSound('in');
         triggerVibration([100, 50, 150]);
         confetti({ particleCount: 90, spread: 70, origin: { y: 0.5 } });
@@ -302,6 +292,16 @@ function PersonalPunchContent({ params }: PageProps) {
           }
           return a;
         });
+        const updatedRecord = newAttList.find(
+          (a) => a.id === attId || (a.employee_id === employee.id && a.clock_out === now.toISOString())
+        );
+        if (updatedRecord) {
+          fetch('/api/attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedRecord),
+          }).catch(() => {});
+        }
         playSound('out');
         triggerVibration([150, 50, 100]);
       }
