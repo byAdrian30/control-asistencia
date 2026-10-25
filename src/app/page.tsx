@@ -27,6 +27,7 @@ import TodayFeed from '@/components/TodayFeed';
 import AdminModal from '@/components/AdminModal';
 import PersonalDeviceKiosk from '@/components/PersonalDeviceKiosk';
 import DeviceBindingModal from '@/components/DeviceBindingModal';
+import { getPeruDateTime } from '@/lib/late-calculator';
 import confetti from 'canvas-confetti';
 
 export default function AttendanceHomePage() {
@@ -451,7 +452,7 @@ export default function AttendanceHomePage() {
   const [currentDayOfWeek, setCurrentDayOfWeek] = useState(1);
 
   useEffect(() => {
-    setCurrentDayOfWeek(new Date().getDay());
+    setCurrentDayOfWeek(getPeruDateTime().dayOfWeek);
   }, []);
 
   const boundSchedule = boundEmployee

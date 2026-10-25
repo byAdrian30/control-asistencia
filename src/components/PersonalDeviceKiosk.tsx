@@ -155,6 +155,7 @@ export default function PersonalDeviceKiosk({
         }
 
         const timeStr = now.toLocaleTimeString('es-PE', {
+          timeZone: 'America/Lima',
           hour: '2-digit',
           minute: '2-digit',
           hour12: true,

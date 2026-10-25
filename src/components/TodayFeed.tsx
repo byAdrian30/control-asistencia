@@ -63,12 +63,14 @@ export default function TodayFeed({ attendances, employees }: TodayFeedProps) {
             const emp = employeeMap.get(record.employee_id);
             const empName = emp ? emp.name : 'Colaborador';
             const inTime = new Date(record.clock_in).toLocaleTimeString('es-PE', {
+              timeZone: 'America/Lima',
               hour: '2-digit',
               minute: '2-digit',
               hour12: true,
             });
             const outTime = record.clock_out
               ? new Date(record.clock_out).toLocaleTimeString('es-PE', {
+                  timeZone: 'America/Lima',
                   hour: '2-digit',
                   minute: '2-digit',
                   hour12: true,

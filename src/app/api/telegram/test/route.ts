@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const testMessage = `🤖 *¡Conexión Exitosa con el Bot de Telegram!*\n\nEl sistema de *Control de Asistencia de Tienda* está vinculado correctamente.\n\n📅 Fecha: \`${new Date().toLocaleString('es-PE')}\`\n⏰ Recibirás las alertas de tardanza todos los días a las 12:00 PM.`;
+    const testMessage = `🤖 *¡Conexión Exitosa con el Bot de Telegram!*\n\nEl sistema de *Control de Asistencia de Tienda* está vinculado correctamente.\n\n📅 Fecha: \`${new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' })}\` (Hora Perú)\n⏰ Recibirás las alertas de tardanza todos los días a las 12:00 PM.`;
 
     const res = await sendTelegramMessage({
       botToken,

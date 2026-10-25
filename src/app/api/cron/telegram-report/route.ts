@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase';
 import { buildLateReportMessage, sendTelegramMessage } from '@/lib/telegram';
-import { calculateMinutesLate } from '@/lib/late-calculator';
+import {
+  calculateMinutesLate,
+  formatPeruTime,
+  formatPeruDate,
+  getPeruDateTime,
+} from '@/lib/late-calculator';
 import { Employee, Schedule, Attendance } from '@/types/database';
 import { serverAttendances } from '@/lib/server-state';
 import { INITIAL_EMPLOYEES, INITIAL_SCHEDULES } from '@/lib/mock-storage';
@@ -41,16 +46,12 @@ async function handleTelegramReport(req: NextRequest) {
 
     const supabase = getServiceSupabase();
     const now = new Date();
-    // Inicio del día local (hoy a las 00:00:00)
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
+    const peruNow = getPeruDateTime(now);
+    const dateStr = formatPeruDate(now);
 
-    const dateStr = now.toLocaleDateString('es-PE', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    // Rango de hoy en hora Perú (America/Lima) convertido a UTC
+    const todayStart = new Date(Date.UTC(peruNow.year, peruNow.month - 1, peruNow.day, 5, 0, 0)).toISOString();
+    const todayEnd = new Date(Date.UTC(peruNow.year, peruNow.month - 1, peruNow.day + 1, 4, 59, 59)).toISOString();
 
     let lateRecords: Array<{
       name: string;
@@ -60,6 +61,7 @@ async function handleTelegramReport(req: NextRequest) {
     }> = [];
     let onTimeCount = 0;
     let totalPresent = 0;
+    const currentDayOfWeek = peruNow.dayOfWeek;
 
     if (supabase) {
       // 1. Obtener empleados
@@ -67,8 +69,7 @@ async function handleTelegramReport(req: NextRequest) {
       const employeeMap = new Map<string, Employee>();
       (employees || []).forEach((e: Employee) => employeeMap.set(e.id, e));
 
-      // 2. Obtener horarios del día de la semana actual
-      const currentDayOfWeek = now.getDay();
+      // 2. Obtener horarios del día de la semana actual en Perú
       const { data: schedules } = await supabase
         .from('schedules')
         .select('*')
@@ -91,19 +92,13 @@ async function handleTelegramReport(req: NextRequest) {
         const emp = employeeMap.get(att.employee_id);
         const empName = emp ? emp.name : 'Colaborador';
         const sch = scheduleMap.get(att.employee_id);
-        const clockInDate = new Date(att.clock_in);
-        const timeStr = clockInDate.toLocaleTimeString('es-PE', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        });
+        const timeStr = formatPeruTime(att.clock_in);
 
-        // Si ya tiene minutes_late registrado en base de datos o lo calculamos
-        let lateMin = att.minutes_late;
+        let lateMin = 0;
         let expectedStr = sch?.start_time ? sch.start_time.slice(0, 5) : 'Sin horario';
 
-        if (lateMin === 0 && sch) {
-          const calc = calculateMinutesLate(clockInDate, sch);
+        if (sch) {
+          const calc = calculateMinutesLate(att.clock_in, sch);
           lateMin = calc.minutesLate;
         }
 
@@ -123,7 +118,6 @@ async function handleTelegramReport(req: NextRequest) {
       const employeeMap = new Map<string, Employee>();
       INITIAL_EMPLOYEES.forEach((e) => employeeMap.set(e.id, e));
 
-      const currentDayOfWeek = now.getDay();
       const scheduleMap = new Map<string, Schedule>();
       INITIAL_SCHEDULES.filter((s) => s.day_of_week === currentDayOfWeek && s.is_active).forEach((s) =>
         scheduleMap.set(s.employee_id, s)
@@ -135,17 +129,12 @@ async function handleTelegramReport(req: NextRequest) {
         const emp = employeeMap.get(att.employee_id);
         const empName = emp ? emp.name : 'Colaborador';
         const sch = scheduleMap.get(att.employee_id);
-        const clockInDate = new Date(att.clock_in);
-        const timeStr = clockInDate.toLocaleTimeString('es-PE', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        });
+        const timeStr = formatPeruTime(att.clock_in);
 
-        let lateMin = att.minutes_late;
+        let lateMin = 0;
         let expectedStr = sch?.start_time ? sch.start_time.slice(0, 5) : 'Sin horario';
         if (sch) {
-          const calc = calculateMinutesLate(clockInDate, sch);
+          const calc = calculateMinutesLate(att.clock_in, sch);
           lateMin = calc.minutesLate;
         }
 

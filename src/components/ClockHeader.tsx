@@ -29,9 +29,19 @@ export default function ClockHeader({
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      const hours = now.getHours();
-      const minutes = now.getMinutes().toString().padStart(2, '0');
-      const secs = now.getSeconds().toString().padStart(2, '0');
+      const peruParts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Lima',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        hour12: false,
+      }).formatToParts(now);
+
+      const getP = (t: string) => Number(peruParts.find((p) => p.type === t)?.value ?? 0);
+      let hours = getP('hour');
+      if (hours === 24) hours = 0;
+      const minutes = getP('minute').toString().padStart(2, '0');
+      const secs = getP('second').toString().padStart(2, '0');
       const ampm = hours >= 12 ? 'PM' : 'AM';
       const formattedHours = (hours % 12 || 12).toString().padStart(2, '0');
 
@@ -39,6 +49,7 @@ export default function ClockHeader({
       setSeconds(`:${secs}`);
 
       const options: Intl.DateTimeFormatOptions = {
+        timeZone: 'America/Lima',
         weekday: 'long',
         day: 'numeric',
         month: 'long',

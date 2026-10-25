@@ -146,6 +146,7 @@ export default function PunchModal({
         }
 
         const timeStr = now.toLocaleTimeString('es-PE', {
+          timeZone: 'America/Lima',
           hour: '2-digit',
           minute: '2-digit',
           hour12: true,
@@ -350,7 +351,7 @@ export default function PunchModal({
               </div>
               {isWorking && todayAttendance?.clock_in && (
                 <span className="text-xs font-mono font-bold text-emerald-400">
-                  Entrada: {new Date(todayAttendance.clock_in).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  Entrada: {new Date(todayAttendance.clock_in).toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: true })}
                 </span>
               )}
             </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Search, UserCheck, KeyRound, Play, Square, Check, Clock, Sparkles } from 'lucide-react';
 import { Employee, Attendance, Schedule } from '@/types/database';
+import { getPeruDateTime } from '@/lib/late-calculator';
 import PunchModal from './PunchModal';
 import PinPad from './PinPad';
 import { playSound, triggerVibration } from '@/lib/sound';
@@ -48,7 +49,7 @@ export default function KioskMode({
   // Mapear horarios de hoy (0 = Domingo, 1 = Lunes, ...)
   const [currentDayOfWeek, setCurrentDayOfWeek] = useState(1);
   useEffect(() => {
-    setCurrentDayOfWeek(new Date().getDay());
+    setCurrentDayOfWeek(getPeruDateTime().dayOfWeek);
   }, []);
   const todaySchedulesMap = new Map<string, Schedule>();
   schedules
@@ -261,6 +262,7 @@ export default function KioskMode({
                       {isWorking && activeAtt && (
                         <span className="text-emerald-300 font-mono text-[11px] font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                           Entrada: {new Date(activeAtt.clock_in).toLocaleTimeString('es-PE', {
+                            timeZone: 'America/Lima',
                             hour: '2-digit',
                             minute: '2-digit',
                             hour12: true,

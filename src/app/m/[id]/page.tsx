@@ -32,7 +32,12 @@ import {
 import { getCurrentPosition, calculateDistanceMeters, formatDistance } from '@/lib/geo';
 import { getOrCreateDeviceId, getDeviceDescription } from '@/lib/device';
 import { playSound, triggerVibration } from '@/lib/sound';
-import { calculateMinutesLate, formatHoursWorked } from '@/lib/late-calculator';
+import {
+  calculateMinutesLate,
+  formatHoursWorked,
+  getPeruDateTime,
+  formatPeruTime,
+} from '@/lib/late-calculator';
 import PinPad from '@/components/PinPad';
 
 interface PageProps {
@@ -110,7 +115,7 @@ function PersonalPunchContent({ params }: PageProps) {
       setAttendances(empAtts);
 
       const allSchedules = getLocalSchedules();
-      const currentDay = new Date().getDay();
+      const currentDay = getPeruDateTime().dayOfWeek;
       const todaySch = allSchedules.find(
         (s) => s.employee_id === target.id && s.day_of_week === currentDay && s.is_active
       );
@@ -288,6 +293,7 @@ function PersonalPunchContent({ params }: PageProps) {
       setAttendances(newAttList.filter((a) => a.employee_id === employee.id));
 
       const timeStr = now.toLocaleTimeString('es-PE', {
+        timeZone: 'America/Lima',
         hour: '2-digit',
         minute: '2-digit',
         hour12: true,
