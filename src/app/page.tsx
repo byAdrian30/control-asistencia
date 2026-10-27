@@ -407,6 +407,13 @@ export default function AttendanceHomePage() {
     setEmployees(updated);
     saveLocalEmployees(updated);
 
+    // Limpiar asistencias y horarios de este colaborador
+    setAttendances((prev) => prev.filter((a) => a.employee_id !== id));
+    setSchedules((prev) => prev.filter((s) => s.employee_id !== id));
+
+    // Purgar de la base de datos central en la nube
+    fetch(`/api/attendance?deleteEmployeeId=${id}`, { method: 'DELETE' }).catch(() => {});
+
     if (boundEmployee && boundEmployee.id === id) {
       setBoundEmployee(null);
       clearStoredBoundEmployeeId();

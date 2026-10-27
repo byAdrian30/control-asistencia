@@ -160,3 +160,23 @@ _Aviso automático disparado de inmediato por el Sistema de Asistencia de Shimay
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const deleteEmployeeId = searchParams.get('deleteEmployeeId');
+    if (!deleteEmployeeId) {
+      return NextResponse.json({ error: 'Falta deleteEmployeeId' }, { status: 400 });
+    }
+
+    const { getCloudAttendances, saveCloudAttendancesList } = await import('@/lib/cloud-storage');
+    const currentCloud = await getCloudAttendances();
+    const filtered = currentCloud.filter((a) => a.employee_id !== deleteEmployeeId);
+    await saveCloudAttendancesList(filtered);
+
+    return NextResponse.json({ success: true, count: filtered.length });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Error al eliminar';
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

@@ -159,17 +159,6 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     active: true,
   },
   {
-    id: 'emp-salon-8',
-    slug: 'raquel-perez',
-    name: 'Raquel Abigail Perez Ramirez',
-    code: '',
-    has_custom_pin: false,
-    role: 'Nuevo - Atención',
-    area: 'Salón',
-    avatar_color: '#e11d48',
-    active: true,
-  },
-  {
     id: 'emp-salon-9',
     slug: 'tatiana-escobar',
     name: 'Tatiana Escobar',
@@ -223,7 +212,6 @@ export const INITIAL_SCHEDULES: Schedule[] = [
   ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-5', d)),
   ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-6', d)),
   ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-7', d)),
-  ...[1, 2, 4, 5, 6, 0].map((d) => createShift('emp-salon-8', d)),
   ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-9', d, '15:00', '23:00')),
 
   createShift('emp-salon-10', 1, '13:45', '23:00'),
@@ -251,9 +239,9 @@ export const DEFAULT_CONFIG: SystemConfig = {
 };
 
 const STORAGE_KEYS = {
-  EMPLOYEES_V3: 'store_attendance_employees_v5',
-  ATTENDANCE_V3: 'store_attendance_records_v5',
-  SCHEDULES_V3: 'store_attendance_schedules_v5',
+  EMPLOYEES_V3: 'store_attendance_employees_v6',
+  ATTENDANCE_V3: 'store_attendance_records_v6',
+  SCHEDULES_V3: 'store_attendance_schedules_v6',
   CONFIG_V3: 'store_attendance_config_v3',
 };
 
@@ -270,9 +258,12 @@ export const getLocalEmployees = (): Employee[] => {
       localStorage.setItem(STORAGE_KEYS.EMPLOYEES_V3, JSON.stringify(INITIAL_EMPLOYEES));
       return INITIAL_EMPLOYEES;
     }
-    // Excluir a Adrian y Alexander de la asistencia
+    // Excluir a Adrian, Alexander y Raquel de la asistencia
     const filtered = parsed.filter(
-      (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1'
+      (e: Employee) =>
+        e.id !== 'emp-cocina-1' &&
+        e.id !== 'emp-salon-1' &&
+        e.id !== 'emp-salon-8'
     );
     if (filtered.length !== parsed.length) {
       localStorage.setItem(STORAGE_KEYS.EMPLOYEES_V3, JSON.stringify(filtered));
@@ -285,9 +276,12 @@ export const getLocalEmployees = (): Employee[] => {
 
 export const saveLocalEmployees = (employees: Employee[]) => {
   if (typeof window === 'undefined') return;
-  // Excluir a Adrian y Alexander de la asistencia
+  // Excluir a Adrian, Alexander y Raquel de la asistencia
   const filtered = employees.filter(
-    (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1'
+    (e: Employee) =>
+      e.id !== 'emp-cocina-1' &&
+      e.id !== 'emp-salon-1' &&
+      e.id !== 'emp-salon-8'
   );
   localStorage.setItem(STORAGE_KEYS.EMPLOYEES_V3, JSON.stringify(filtered));
 };
@@ -298,8 +292,10 @@ export const getLocalAttendance = (): Attendance[] => {
   if (!saved) return [];
   try {
     const list: Attendance[] = JSON.parse(saved);
-    // Filtrar marcaciones accidentales de Mayleb hoy martes (descansa según malla oficial)
+    // Filtrar marcaciones accidentales o de colaboradores eliminados
     const filtered = list.filter((a) => {
+      if (a.employee_id === 'emp-salon-8') return false;
+      if (a.employee_id === 'emp-cocina-1' || a.employee_id === 'emp-salon-1') return false;
       if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
         const d = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
         if (d === '2026-10-27') return false;
@@ -317,8 +313,10 @@ export const getLocalAttendance = (): Attendance[] => {
 
 export const saveLocalAttendance = (records: Attendance[]) => {
   if (typeof window === 'undefined') return;
-  // Filtrar a Mayleb si se intentara guardar para hoy martes
+  // Filtrar a Mayleb en descanso y a Raquel/Adrian/Alexander
   const filtered = records.filter((a) => {
+    if (a.employee_id === 'emp-salon-8') return false;
+    if (a.employee_id === 'emp-cocina-1' || a.employee_id === 'emp-salon-1') return false;
     if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
       const d = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
       if (d === '2026-10-27') return false;
@@ -337,12 +335,15 @@ export const getLocalSchedules = (): Schedule[] => {
   }
   try {
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed) || parsed.length < 80) {
+    if (!Array.isArray(parsed) || parsed.length < 70) {
       localStorage.setItem(STORAGE_KEYS.SCHEDULES_V3, JSON.stringify(INITIAL_SCHEDULES));
       return INITIAL_SCHEDULES;
     }
     const filtered = parsed.filter(
-      (s: Schedule) => s.employee_id !== 'emp-cocina-1' && s.employee_id !== 'emp-salon-1'
+      (s: Schedule) =>
+        s.employee_id !== 'emp-cocina-1' &&
+        s.employee_id !== 'emp-salon-1' &&
+        s.employee_id !== 'emp-salon-8'
     );
     return filtered;
   } catch {

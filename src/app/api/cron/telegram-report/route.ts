@@ -103,15 +103,16 @@ async function handleTelegramReport(req: NextRequest) {
       return t >= todayStartTime && t <= todayEndTime;
     };
 
-    // 1. Obtener todos los colaboradores activos (17 de Cocina y Salón, excluyendo a Adrian y Alexander)
+    // 1. Obtener todos los colaboradores activos (16 de Cocina y Salón, excluyendo a Adrian, Alexander y Raquel)
     let allEmployees: Employee[] = INITIAL_EMPLOYEES.filter(
-      (e) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1'
+      (e) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
     );
     if (supabase) {
       const { data: emps } = await supabase.from('employees').select('*').eq('active', true);
       if (emps && emps.length > 0) {
         allEmployees = emps.filter(
-          (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1'
+          (e: Employee) =>
+            e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
         );
       }
     }
@@ -122,7 +123,8 @@ async function handleTelegramReport(req: NextRequest) {
         s.day_of_week === currentDayOfWeek &&
         s.is_active &&
         s.employee_id !== 'emp-cocina-1' &&
-        s.employee_id !== 'emp-salon-1'
+        s.employee_id !== 'emp-salon-1' &&
+        s.employee_id !== 'emp-salon-8'
     );
     if (supabase) {
       const { data: schs } = await supabase
@@ -132,7 +134,10 @@ async function handleTelegramReport(req: NextRequest) {
         .eq('is_active', true);
       if (schs && schs.length > 0) {
         todaySchedules = schs.filter(
-          (s: Schedule) => s.employee_id !== 'emp-cocina-1' && s.employee_id !== 'emp-salon-1'
+          (s: Schedule) =>
+            s.employee_id !== 'emp-cocina-1' &&
+            s.employee_id !== 'emp-salon-1' &&
+            s.employee_id !== 'emp-salon-8'
         );
       }
     }
