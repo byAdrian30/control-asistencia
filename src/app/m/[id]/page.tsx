@@ -26,6 +26,7 @@ import {
   getLocalAttendance,
   saveLocalAttendance,
   getLocalSchedules,
+  saveLocalSchedules,
   getLocalConfig,
   saveLocalConfig,
 } from '@/lib/mock-storage';
@@ -83,36 +84,28 @@ function PersonalPunchContent({ params }: PageProps) {
     lostChippu?: boolean;
   } | null>(null);
 
-  // Cargar datos
+  // Cargar datos y sincronización central
   useEffect(() => {
     setIsMounted(true);
-    // Sincronizar configuración con el servidor
-    fetch('/api/config')
-      .then((r) => r.json())
-      .then((srvCfg) => {
-        if (srvCfg && srvCfg.mall_lat) {
-          setConfig(srvCfg);
-          saveLocalConfig(srvCfg);
-        }
-      })
-      .catch(() => {});
-
-    const emps = getLocalEmployees();
-    const target = emps.find(
-      (e) => e.id === employeeIdentifier || e.slug === employeeIdentifier
-    );
-    setEmployee(target || null);
 
     const devId = getOrCreateDeviceId();
     const devDesc = getDeviceDescription();
     setCurrentDeviceId(devId);
     setCurrentDeviceDesc(devDesc);
 
+    // Carga inicial rápida desde caché local
+    const emps = getLocalEmployees();
+    const target = emps.find(
+      (e) => e.id === employeeIdentifier || e.slug === employeeIdentifier
+    );
+    setEmployee(target || null);
+
     if (target) {
       if (target.registered_device_id && target.registered_device_id !== devId) {
         setDeviceMismatch(true);
+      } else {
+        setDeviceMismatch(false);
       }
-
       const allAtts = getLocalAttendance();
       const empAtts = allAtts.filter((a) => a.employee_id === target.id);
       setAttendances(empAtts);
@@ -124,6 +117,72 @@ function PersonalPunchContent({ params }: PageProps) {
       );
       setSchedule(todaySch || null);
     }
+
+    const syncWithCloud = async () => {
+      try {
+        const res = await fetch('/api/sync', { cache: 'no-store' });
+        if (res.ok) {
+          const cloudState = await res.json();
+          if (cloudState && Array.isArray(cloudState.employees)) {
+            const cleanEmps: Employee[] = cloudState.employees.filter(
+              (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
+            );
+            saveLocalEmployees(cleanEmps);
+
+            const updatedTarget = cleanEmps.find(
+              (e) => e.id === employeeIdentifier || e.slug === employeeIdentifier
+            );
+            if (updatedTarget) {
+              setEmployee(updatedTarget);
+              if (updatedTarget.registered_device_id && updatedTarget.registered_device_id !== devId) {
+                setDeviceMismatch(true);
+              } else {
+                setDeviceMismatch(false);
+              }
+
+              if (Array.isArray(cloudState.attendances)) {
+                const cleanAtts: Attendance[] = cloudState.attendances.filter(
+                  (a: Attendance) =>
+                    a.employee_id !== 'emp-cocina-1' &&
+                    a.employee_id !== 'emp-salon-1' &&
+                    a.employee_id !== 'emp-salon-8'
+                );
+                saveLocalAttendance(cleanAtts);
+                setAttendances(cleanAtts.filter((a) => a.employee_id === updatedTarget.id));
+              }
+
+              if (Array.isArray(cloudState.schedules)) {
+                const cleanSchs: Schedule[] = cloudState.schedules.filter(
+                  (s: Schedule) =>
+                    s.employee_id !== 'emp-cocina-1' &&
+                    s.employee_id !== 'emp-salon-1' &&
+                    s.employee_id !== 'emp-salon-8'
+                );
+                saveLocalSchedules(cleanSchs);
+                const currentDay = getPeruDateTime().dayOfWeek;
+                const todaySch = cleanSchs.find(
+                  (s) => s.employee_id === updatedTarget.id && s.day_of_week === currentDay && s.is_active
+                );
+                setSchedule(todaySch || null);
+              }
+
+              if (cloudState.config) {
+                setConfig(cloudState.config);
+                saveLocalConfig(cloudState.config);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Sync cloud error en /m/[id]:', err);
+      }
+    };
+
+    syncWithCloud();
+
+    // Auto-sincronización continua cada 8 segundos para mantener el estado actualizado en vivo
+    const timer = setInterval(syncWithCloud, 8000);
+    return () => clearInterval(timer);
   }, [employeeIdentifier]);
 
   const activeAttendance = attendances.find((a) => !a.clock_out);
@@ -177,6 +236,14 @@ function PersonalPunchContent({ params }: PageProps) {
       setEmployee(updatedEmp);
       setDeviceMismatch(false);
       setIsBindingDevice(false);
+
+      // Sincronizar de inmediato con la nube central para que se refleje en todos los dispositivos
+      fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: updatedList }),
+      }).catch(() => {});
+
       playSound('in');
       triggerVibration([100, 50, 150]);
       confetti({ particleCount: 70, spread: 60, origin: { y: 0.5 } });

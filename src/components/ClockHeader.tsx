@@ -20,7 +20,7 @@ export default function ClockHeader({
   onRefresh,
   isRefreshing = false,
   activeCount = 0,
-  totalCount = 17,
+  totalCount = 16,
 }: ClockHeaderProps) {
   const [time, setTime] = useState<string>('');
   const [seconds, setSeconds] = useState<string>('');

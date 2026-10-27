@@ -22,7 +22,7 @@ import {
   currentServerConfig,
   addOrUpdateServerAttendance,
 } from '@/lib/server-state';
-import { getCloudAttendances } from '@/lib/cloud-storage';
+import { getCloudAttendances, getCloudFullState } from '@/lib/cloud-storage';
 import { INITIAL_EMPLOYEES, INITIAL_SCHEDULES } from '@/lib/mock-storage';
 
 export async function GET(req: NextRequest) {
@@ -57,18 +57,23 @@ async function handleTelegramReport(req: NextRequest) {
       });
     }
 
+    const cloudFullState = await getCloudFullState();
+
     const botToken =
       bodyData.botToken ||
+      cloudFullState.config?.telegram_bot_token ||
       currentServerConfig.telegram_bot_token ||
       process.env.TELEGRAM_BOT_TOKEN;
 
     const chatId =
       bodyData.chatId ||
+      cloudFullState.config?.telegram_chat_id ||
       currentServerConfig.telegram_chat_id ||
       process.env.TELEGRAM_CHAT_ID;
 
     const storeName =
       bodyData.storeName ||
+      cloudFullState.config?.store_name ||
       currentServerConfig.store_name ||
       process.env.STORE_NAME ||
       'Shimaya Ramen - Mall Aventura Chiclayo';
@@ -103,10 +108,15 @@ async function handleTelegramReport(req: NextRequest) {
       return t >= todayStartTime && t <= todayEndTime;
     };
 
-    // 1. Obtener todos los colaboradores activos (16 de Cocina y Salón, excluyendo a Adrian, Alexander y Raquel)
-    let allEmployees: Employee[] = INITIAL_EMPLOYEES.filter(
-      (e) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
+    // 1. Obtener todos los colaboradores activos (16 de Cocina y Salón, excluyendo permanentemente a Adrian, Alexander y Raquel)
+    let allEmployees: Employee[] = (
+      cloudFullState.employees && cloudFullState.employees.length > 0
+        ? cloudFullState.employees
+        : INITIAL_EMPLOYEES
+    ).filter(
+      (e) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8' && e.active !== false
     );
+
     if (supabase) {
       const { data: emps } = await supabase.from('employees').select('*').eq('active', true);
       if (emps && emps.length > 0) {
@@ -118,7 +128,11 @@ async function handleTelegramReport(req: NextRequest) {
     }
 
     // 2. Obtener horarios correspondientes al día de hoy según la malla horaria oficial
-    let todaySchedules: Schedule[] = INITIAL_SCHEDULES.filter(
+    let todaySchedules: Schedule[] = (
+      cloudFullState.schedules && cloudFullState.schedules.length > 0
+        ? cloudFullState.schedules
+        : INITIAL_SCHEDULES
+    ).filter(
       (s) =>
         s.day_of_week === currentDayOfWeek &&
         s.is_active &&
@@ -126,6 +140,7 @@ async function handleTelegramReport(req: NextRequest) {
         s.employee_id !== 'emp-salon-1' &&
         s.employee_id !== 'emp-salon-8'
     );
+
     if (supabase) {
       const { data: schs } = await supabase
         .from('schedules')
@@ -146,7 +161,7 @@ async function handleTelegramReport(req: NextRequest) {
     todaySchedules.forEach((s) => scheduleMap.set(s.employee_id, s));
 
     // 3. Obtener todas las marcaciones del almacenamiento central en la nube
-    const cloudAtts = await getCloudAttendances();
+    const cloudAtts = cloudFullState.attendances || [];
     const idMap = new Map<string, Attendance>();
     serverAttendances.forEach((a) => idMap.set(a.id, a));
     cloudAtts.forEach((a) => idMap.set(a.id, a));

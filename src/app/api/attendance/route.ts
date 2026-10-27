@@ -111,12 +111,25 @@ export async function POST(req: Request) {
 
     // Si es entrada y superó el límite de 10 minutos en la quincena, DISPARAR ALERTA INMEDIATA A TELEGRAM
     if (isClockIn && (reachedThreshold || alreadyLostAndLate)) {
-      const botToken = currentServerConfig.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN;
-      const chatId = currentServerConfig.telegram_chat_id || process.env.TELEGRAM_CHAT_ID;
-      const storeName = currentServerConfig.store_name || 'Shimaya Ramen';
+      const { getCloudFullState } = await import('@/lib/cloud-storage');
+      const cloudFull = await getCloudFullState();
+      const botToken =
+        cloudFull.config?.telegram_bot_token ||
+        currentServerConfig.telegram_bot_token ||
+        process.env.TELEGRAM_BOT_TOKEN;
+      const chatId =
+        cloudFull.config?.telegram_chat_id ||
+        currentServerConfig.telegram_chat_id ||
+        process.env.TELEGRAM_CHAT_ID;
+      const storeName =
+        cloudFull.config?.store_name ||
+        currentServerConfig.store_name ||
+        'Shimaya Ramen';
 
       if (botToken && chatId) {
-        const emp = INITIAL_EMPLOYEES.find((e) => e.id === record.employee_id);
+        const emp =
+          cloudFull.employees.find((e) => e.id === record.employee_id) ||
+          INITIAL_EMPLOYEES.find((e) => e.id === record.employee_id);
         const empName = emp ? emp.name : 'Colaborador';
         const inTimeStr = formatPeruTime(record.clock_in);
 

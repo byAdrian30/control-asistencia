@@ -55,10 +55,79 @@ export default function AttendanceHomePage() {
   const loadData = useCallback(async () => {
     setIsRefreshing(true);
 
-    let loadedEmps: Employee[] = [];
-    let loadedAtts: Attendance[] = [];
-    let loadedSchs: Schedule[] = [];
+    // Filtrar marcaciones accidentales o de colaboradores excluidos
+    const sanitizeAtts = (list: Attendance[]) =>
+      list.filter((a) => {
+        if (a.employee_id === 'emp-salon-8' || a.employee_id === 'emp-cocina-1' || a.employee_id === 'emp-salon-1') {
+          return false;
+        }
+        if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
+          const dateStr = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+          if (dateStr === '2026-10-27') return false;
+        }
+        return true;
+      });
 
+    // 1. Cargar estado local inmediato para evitar parpadeos
+    let loadedEmps = getLocalEmployees();
+    let loadedAtts = sanitizeAtts(getLocalAttendance());
+    let loadedSchs = getLocalSchedules();
+    const initialLocalConfig = getLocalConfig();
+
+    setEmployees(loadedEmps);
+    setAttendances(loadedAtts);
+    setSchedules(loadedSchs);
+    setConfig(initialLocalConfig);
+
+    // 2. Sincronización atómica central con la nube (/api/sync)
+    try {
+      const syncRes = await fetch('/api/sync', { cache: 'no-store' });
+      if (syncRes.ok) {
+        const cloudState = await syncRes.json();
+        if (cloudState) {
+          if (Array.isArray(cloudState.employees) && cloudState.employees.length > 0) {
+            loadedEmps = cloudState.employees.filter(
+              (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
+            );
+            setEmployees(loadedEmps);
+            saveLocalEmployees(loadedEmps);
+          }
+
+          if (Array.isArray(cloudState.schedules) && cloudState.schedules.length > 0) {
+            loadedSchs = cloudState.schedules.filter(
+              (s: Schedule) =>
+                s.employee_id !== 'emp-cocina-1' &&
+                s.employee_id !== 'emp-salon-1' &&
+                s.employee_id !== 'emp-salon-8'
+            );
+            setSchedules(loadedSchs);
+            saveLocalSchedules(loadedSchs);
+          }
+
+          if (Array.isArray(cloudState.attendances)) {
+            loadedAtts = sanitizeAtts(
+              cloudState.attendances.filter(
+                (a: Attendance) =>
+                  a.employee_id !== 'emp-cocina-1' &&
+                  a.employee_id !== 'emp-salon-1' &&
+                  a.employee_id !== 'emp-salon-8'
+              )
+            );
+            setAttendances(loadedAtts);
+            saveLocalAttendance(loadedAtts);
+          }
+
+          if (cloudState.config) {
+            setConfig(cloudState.config);
+            saveLocalConfig(cloudState.config);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Sync cloud error:', err);
+    }
+
+    // 3. Si Supabase está configurado, sincronizar también
     if (isConnected && supabase) {
       try {
         const { data: emps, error: empErr } = await supabase
@@ -66,9 +135,11 @@ export default function AttendanceHomePage() {
           .select('*')
           .order('name');
         if (!empErr && emps && emps.length > 0) {
-          loadedEmps = emps;
-        } else {
-          loadedEmps = getLocalEmployees();
+          loadedEmps = emps.filter(
+            (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
+          );
+          setEmployees(loadedEmps);
+          saveLocalEmployees(loadedEmps);
         }
 
         const now = new Date();
@@ -77,81 +148,27 @@ export default function AttendanceHomePage() {
           .from('attendance')
           .select('*')
           .gte('clock_in', startOfDay);
-        if (atts) loadedAtts = atts;
+        if (atts) {
+          const merged = sanitizeAtts(atts);
+          setAttendances(merged);
+          saveLocalAttendance(merged);
+        }
 
         const { data: schs } = await supabase.from('schedules').select('*');
-        if (schs && schs.length > 0) loadedSchs = schs;
-        else loadedSchs = getLocalSchedules();
-      } catch {
-        loadedEmps = getLocalEmployees();
-        loadedAtts = getLocalAttendance();
-        loadedSchs = getLocalSchedules();
+        if (schs && schs.length > 0) {
+          loadedSchs = schs.filter(
+            (s: Schedule) =>
+              s.employee_id !== 'emp-cocina-1' &&
+              s.employee_id !== 'emp-salon-1' &&
+              s.employee_id !== 'emp-salon-8'
+          );
+          setSchedules(loadedSchs);
+          saveLocalSchedules(loadedSchs);
+        }
+      } catch (err) {
+        console.error('Supabase fetch error:', err);
       }
-    } else {
-      loadedEmps = getLocalEmployees();
-      loadedAtts = getLocalAttendance();
-      loadedSchs = getLocalSchedules();
     }
-
-    // Filtrar marcaciones accidentales en día de descanso (Mayleb descansa los martes)
-    const sanitizeAtts = (list: Attendance[]) =>
-      list.filter((a) => {
-        if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
-          const dateStr = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-          if (dateStr === '2026-10-27') return false;
-        }
-        return true;
-      });
-
-    setEmployees(loadedEmps);
-    setAttendances(sanitizeAtts(loadedAtts));
-    setSchedules(loadedSchs);
-    const initialLocalConfig = getLocalConfig();
-    setConfig(initialLocalConfig);
-
-    // Sincronizar configuración con el servidor
-    fetch('/api/config')
-      .then((r) => r.json())
-      .then((srvCfg) => {
-        if (srvCfg && srvCfg.mall_lat) {
-          setConfig(srvCfg);
-          saveLocalConfig(srvCfg);
-        }
-      })
-      .catch(() => {});
-
-    // Sincronizar marcaciones centrales con el servidor y respaldar en ambos sentidos
-    fetch('/api/attendance')
-      .then((r) => r.json())
-      .then((serverAtts: Attendance[]) => {
-        if (Array.isArray(serverAtts)) {
-          setAttendances((prev) => {
-            const map = new Map<string, Attendance>();
-            // 1. Resguardar marcaciones locales existentes
-            prev.forEach((a) => map.set(a.id, a));
-            // 2. Incorporar marcaciones de la nube
-            serverAtts.forEach((a) => map.set(a.id, a));
-            const merged = sanitizeAtts(
-              Array.from(map.values()).sort(
-                (a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime()
-              )
-            );
-            saveLocalAttendance(merged);
-
-            // 3. Si en este dispositivo había marcaciones que aún no estaban en la nube, sincronizarlas
-            if (prev.length > 0 && merged.length > serverAtts.length) {
-              fetch('/api/attendance', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(merged),
-              }).catch(() => {});
-            }
-
-            return merged;
-          });
-        }
-      })
-      .catch(() => {});
 
     // Detectar si este celular ya está vinculado a un colaborador
     const curDevId = getOrCreateDeviceId();
@@ -172,10 +189,10 @@ export default function AttendanceHomePage() {
     setIsMounted(true);
     loadData();
 
-    // Auto-sincronización en vivo cada 12 segundos con la nube central
+    // Auto-sincronización en vivo cada 8 segundos con la nube central
     const interval = setInterval(() => {
       loadData();
-    }, 12000);
+    }, 8000);
 
     return () => clearInterval(interval);
   }, [loadData]);
@@ -208,6 +225,13 @@ export default function AttendanceHomePage() {
       const target = updatedEmps.find((e) => e.id === employeeId) || null;
       setBoundEmployee(target);
       setBindingCandidate(null);
+
+      // Persistir de inmediato en la base de datos central en la nube
+      fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: updatedEmps }),
+      }).catch(() => {});
 
       if (isConnected && supabase) {
         await supabase
@@ -380,6 +404,13 @@ export default function AttendanceHomePage() {
       setBoundEmployee(newEmp);
     }
 
+    // Persistir atómicamente a la nube central
+    fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employees: updated }),
+    }).catch(() => {});
+
     if (isConnected && supabase) {
       try {
         await supabase.from('employees').upsert({
@@ -404,24 +435,39 @@ export default function AttendanceHomePage() {
 
   const handleDeleteEmployee = async (id: string) => {
     const updated = employees.filter((e) => e.id !== id);
+    const updatedAtts = attendances.filter((a) => a.employee_id !== id);
+    const updatedSchs = schedules.filter((s) => s.employee_id !== id);
+
     setEmployees(updated);
     saveLocalEmployees(updated);
-
-    // Limpiar asistencias y horarios de este colaborador
-    setAttendances((prev) => prev.filter((a) => a.employee_id !== id));
-    setSchedules((prev) => prev.filter((s) => s.employee_id !== id));
-
-    // Purgar de la base de datos central en la nube
-    fetch(`/api/attendance?deleteEmployeeId=${id}`, { method: 'DELETE' }).catch(() => {});
+    setAttendances(updatedAtts);
+    saveLocalAttendance(updatedAtts);
+    setSchedules(updatedSchs);
+    saveLocalSchedules(updatedSchs);
 
     if (boundEmployee && boundEmployee.id === id) {
       setBoundEmployee(null);
       clearStoredBoundEmployeeId();
     }
 
+    // Purgar de forma permanente de la base de datos central en la nube
+    fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employees: updated,
+        attendances: updatedAtts,
+        schedules: updatedSchs,
+      }),
+    }).catch(() => {});
+
+    fetch(`/api/attendance?deleteEmployeeId=${id}`, { method: 'DELETE' }).catch(() => {});
+
     if (isConnected && supabase) {
       try {
         await supabase.from('employees').delete().eq('id', id);
+        await supabase.from('attendance').delete().eq('employee_id', id);
+        await supabase.from('schedules').delete().eq('employee_id', id);
       } catch (e) {
         console.error('Error eliminando en Supabase:', e);
       }
@@ -435,11 +481,34 @@ export default function AttendanceHomePage() {
     const updated = [...filtered, sch];
     setSchedules(updated);
     saveLocalSchedules(updated);
+
+    // Persistir horario en la nube central
+    fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schedules: updated }),
+    }).catch(() => {});
+
+    if (isConnected && supabase) {
+      try {
+        await supabase.from('schedules').upsert(sch);
+      } catch (e) {
+        console.error('Error guardando horario en Supabase:', e);
+      }
+    }
   };
 
   const handleSaveConfig = async (newConfig: SystemConfig) => {
     setConfig(newConfig);
     saveLocalConfig(newConfig);
+
+    // Persistir configuración en la nube central
+    fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: newConfig }),
+    }).catch(() => {});
+
     try {
       await fetch('/api/config', {
         method: 'POST',
