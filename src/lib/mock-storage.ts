@@ -297,7 +297,19 @@ export const getLocalAttendance = (): Attendance[] => {
   const saved = localStorage.getItem(STORAGE_KEYS.ATTENDANCE_V3);
   if (!saved) return [];
   try {
-    return JSON.parse(saved);
+    const list: Attendance[] = JSON.parse(saved);
+    // Filtrar marcaciones accidentales de Mayleb hoy martes (descansa según malla oficial)
+    const filtered = list.filter((a) => {
+      if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
+        const d = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+        if (d === '2026-10-27') return false;
+      }
+      return true;
+    });
+    if (filtered.length !== list.length) {
+      localStorage.setItem(STORAGE_KEYS.ATTENDANCE_V3, JSON.stringify(filtered));
+    }
+    return filtered;
   } catch {
     return [];
   }
@@ -305,7 +317,15 @@ export const getLocalAttendance = (): Attendance[] => {
 
 export const saveLocalAttendance = (records: Attendance[]) => {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEYS.ATTENDANCE_V3, JSON.stringify(records));
+  // Filtrar a Mayleb si se intentara guardar para hoy martes
+  const filtered = records.filter((a) => {
+    if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
+      const d = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+      if (d === '2026-10-27') return false;
+    }
+    return true;
+  });
+  localStorage.setItem(STORAGE_KEYS.ATTENDANCE_V3, JSON.stringify(filtered));
 };
 
 export const getLocalSchedules = (): Schedule[] => {

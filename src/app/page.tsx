@@ -93,8 +93,18 @@ export default function AttendanceHomePage() {
       loadedSchs = getLocalSchedules();
     }
 
+    // Filtrar marcaciones accidentales en día de descanso (Mayleb descansa los martes)
+    const sanitizeAtts = (list: Attendance[]) =>
+      list.filter((a) => {
+        if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
+          const dateStr = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+          if (dateStr === '2026-10-27') return false;
+        }
+        return true;
+      });
+
     setEmployees(loadedEmps);
-    setAttendances(loadedAtts);
+    setAttendances(sanitizeAtts(loadedAtts));
     setSchedules(loadedSchs);
     const initialLocalConfig = getLocalConfig();
     setConfig(initialLocalConfig);
@@ -121,8 +131,10 @@ export default function AttendanceHomePage() {
             prev.forEach((a) => map.set(a.id, a));
             // 2. Incorporar marcaciones de la nube
             serverAtts.forEach((a) => map.set(a.id, a));
-            const merged = Array.from(map.values()).sort(
-              (a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime()
+            const merged = sanitizeAtts(
+              Array.from(map.values()).sort(
+                (a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime()
+              )
             );
             saveLocalAttendance(merged);
 
@@ -552,23 +564,7 @@ export default function AttendanceHomePage() {
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-5 lg:p-6 pb-12">
-        {/* Banner de Aviso de Primer Ingreso en Celular */}
-        {!boundEmployee && (
-          <div className="max-w-2xl mx-auto mb-6 p-4 rounded-3xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-slate-900 border border-emerald-500/30 text-center shadow-lg">
-            <div className="w-12 h-12 mx-auto mb-2 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <Smartphone className="w-6 h-6" />
-            </div>
-            <h2 className="text-base sm:text-lg font-black text-white">
-              📱 Vinculación de Celular por Primera Vez
-            </h2>
-            <p className="text-xs text-slate-300 max-w-md mx-auto mt-1 leading-relaxed">
-              Selecciona tu nombre abajo para <strong>vincular este celular a tu cuenta y crear tu PIN</strong>. A partir de ese momento, este celular será el único con el que podrás marcar en Mall Aventura.
-            </p>
-            <p className="text-[10px] text-emerald-400 font-mono mt-1.5 font-bold">
-              Equipo detectado: {deviceDesc}
-            </p>
-          </div>
-        )}
+        {/* Banner retirado de la pantalla principal y trasladado a Configuración */}
 
         {/* Si el usuario cambió a modo general y quiere volver a su celular personal */}
         {boundEmployee && forceGeneralMode && (

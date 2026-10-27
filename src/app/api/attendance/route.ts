@@ -18,9 +18,16 @@ export async function GET() {
   const idMap = new Map<string, Attendance>();
   serverAttendances.forEach((a) => idMap.set(a.id, a));
   cloudList.forEach((a) => idMap.set(a.id, a));
-  const list = Array.from(idMap.values()).sort(
-    (a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime()
-  );
+  const list = Array.from(idMap.values())
+    .filter((a) => {
+      // Excluir marcación de Mayleb hoy martes (día de descanso oficial)
+      if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
+        const d = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+        if (d === '2026-10-27') return false;
+      }
+      return true;
+    })
+    .sort((a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime());
 
   return NextResponse.json(list, {
     headers: {
@@ -67,6 +74,14 @@ export async function POST(req: Request) {
     const record: Attendance = body;
     if (!record || !record.id) {
       return NextResponse.json({ error: 'Registro inválido' }, { status: 400 });
+    }
+
+    // Si se intenta registrar marcación a Mayleb hoy martes, ignorar porque descansa hoy
+    if (record.employee_id === 'emp-cocina-4') {
+      const d = new Date(record.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+      if (d === '2026-10-27') {
+        return NextResponse.json({ success: true, message: 'Colaborador en descanso hoy' });
+      }
     }
 
     // Guardar en memoria y persistir en la base de datos central en la nube

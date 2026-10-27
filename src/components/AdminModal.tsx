@@ -511,6 +511,16 @@ export default function AdminModal({
                     </p>
                   </div>
 
+                  <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 text-xs">
+                    <p className="font-bold text-white flex items-center gap-1.5 mb-1">
+                      <Smartphone className="w-4 h-4 text-emerald-400" />
+                      📱 Vinculación de Celular por Primera Vez
+                    </p>
+                    <p className="text-slate-300 leading-relaxed text-[11px]">
+                      Al ingresar por primera vez, el colaborador selecciona su nombre para <strong>vincular su celular a su cuenta y crear su PIN</strong>. A partir de ese momento, su teléfono queda registrado y será el único con el que podrá marcar en Mall Aventura.
+                    </p>
+                  </div>
+
                   <div className="space-y-2">
                     {employees.map((emp) => {
                       const link = getPersonalLink(emp);
