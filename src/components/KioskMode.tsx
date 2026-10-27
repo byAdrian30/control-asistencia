@@ -233,11 +233,6 @@ export default function KioskMode({
                           >
                             {emp.area}
                           </span>
-                          {!emp.has_custom_pin && (
-                            <span className="inline-flex items-center gap-0.5 text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded-md font-bold">
-                              <Sparkles className="w-2.5 h-2.5" /> Crear PIN
-                            </span>
-                          )}
                         </div>
 
                         {/* Nombre completo */}

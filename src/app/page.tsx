@@ -147,6 +147,13 @@ export default function AttendanceHomePage() {
   useEffect(() => {
     setIsMounted(true);
     loadData();
+
+    // Auto-sincronización en vivo cada 12 segundos con la nube central
+    const interval = setInterval(() => {
+      loadData();
+    }, 12000);
+
+    return () => clearInterval(interval);
   }, [loadData]);
 
   // VINCULAR CELULAR POR PRIMERA VEZ (1 SOLO LINK PARA TODOS)

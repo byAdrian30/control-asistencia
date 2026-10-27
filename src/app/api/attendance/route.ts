@@ -5,6 +5,7 @@ import {
   addOrUpdateServerAttendance,
   currentServerConfig,
 } from '@/lib/server-state';
+import { getCloudAttendances, saveCloudAttendance } from '@/lib/cloud-storage';
 import {
   getQuincenaRange,
   formatPeruTime,
@@ -13,7 +14,15 @@ import { INITIAL_EMPLOYEES } from '@/lib/mock-storage';
 import { sendTelegramMessage } from '@/lib/telegram';
 
 export async function GET() {
-  return NextResponse.json(serverAttendances, {
+  const cloudList = await getCloudAttendances();
+  const idMap = new Map<string, Attendance>();
+  serverAttendances.forEach((a) => idMap.set(a.id, a));
+  cloudList.forEach((a) => idMap.set(a.id, a));
+  const list = Array.from(idMap.values()).sort(
+    (a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime()
+  );
+
+  return NextResponse.json(list, {
     headers: {
       'Cache-Control': 'no-store, max-age=0',
     },
@@ -27,14 +36,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Registro inválido' }, { status: 400 });
     }
 
-    // Calcular acumulado de tardanza en la quincena antes de guardar este registro
+    // Guardar en memoria y persistir en la base de datos central en la nube
+    addOrUpdateServerAttendance(record);
+    const updatedCloudList = await saveCloudAttendance(record);
+
+    // Calcular acumulado de tardanza en la quincena
     const isClockIn = !record.clock_out;
     const quincena = getQuincenaRange(record.clock_in);
     const quincenaStart = new Date(quincena.startIso).getTime();
     const quincenaEnd = new Date(quincena.endIso).getTime();
 
     let previousMinutes = 0;
-    serverAttendances.forEach((att) => {
+    updatedCloudList.forEach((att) => {
       if (att.employee_id === record.employee_id && att.id !== record.id && att.clock_in) {
         const t = new Date(att.clock_in).getTime();
         if (t >= quincenaStart && t <= quincenaEnd) {
@@ -47,9 +60,6 @@ export async function POST(req: Request) {
     const newTotalMinutes = previousMinutes + thisPunchLate;
     const reachedThreshold = previousMinutes < 10 && newTotalMinutes >= 10;
     const alreadyLostAndLate = previousMinutes >= 10 && thisPunchLate > 0;
-
-    // Guardar en el almacén del servidor
-    addOrUpdateServerAttendance(record);
 
     // Si es entrada y superó el límite de 10 minutos en la quincena, DISPARAR ALERTA INMEDIATA A TELEGRAM
     if (isClockIn && (reachedThreshold || alreadyLostAndLate)) {
@@ -79,7 +89,6 @@ export async function POST(req: Request) {
 
 _Aviso automático disparado de inmediato por el Sistema de Asistencia de Shimaya Ramen._`;
 
-        // Enviar asíncronamente
         sendTelegramMessage({
           botToken,
           chatId,
@@ -91,7 +100,7 @@ _Aviso automático disparado de inmediato por el Sistema de Asistencia de Shimay
 
     return NextResponse.json({
       success: true,
-      count: serverAttendances.length,
+      count: updatedCloudList.length,
       quincenaTardiness: {
         totalMinutes: newTotalMinutes,
         lostChippu: newTotalMinutes >= 10,

@@ -112,7 +112,7 @@ export function buildLateReportMessage(params: {
     missingRecords = [],
     afternoonRecords = [],
     restDayRecords = [],
-    totalEmployees = 19,
+    totalEmployees = 17,
   } = params;
 
   let msg = `🏪 *REPORTE DE ASISTENCIA - 12:00 PM*\n`;

@@ -1,18 +1,7 @@
 import { Employee, Attendance, Schedule, SystemConfig } from '@/types/database';
 
 export const INITIAL_EMPLOYEES: Employee[] = [
-  // ================= COCINA (9 Colaboradores) =================
-  {
-    id: 'emp-cocina-1',
-    slug: 'alexander-campos',
-    name: 'Alexander Genaro Campos Huanani',
-    code: '',
-    has_custom_pin: false,
-    role: 'Jefe de Cocina',
-    area: 'Cocina',
-    avatar_color: '#ef4444',
-    active: true,
-  },
+  // ================= COCINA (8 Colaboradores - Alexander excluido de asistencia) =================
   {
     id: 'emp-cocina-2',
     slug: 'doris-rojas',
@@ -102,18 +91,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     active: true,
   },
 
-  // ================= SALÓN (10 Colaboradores) =================
-  {
-    id: 'emp-salon-1',
-    slug: 'adrian-barranzuela',
-    name: 'Adrian Smith Barranzuela Cordova',
-    code: '',
-    has_custom_pin: false,
-    role: 'Líder de Tienda',
-    area: 'Salón',
-    avatar_color: '#3b82f6',
-    active: true,
-  },
+  // ================= SALÓN (9 Colaboradores - Adrian excluido de asistencia) =================
   {
     id: 'emp-salon-2',
     slug: 'angela-baldera',
@@ -228,7 +206,6 @@ function createShift(empId: string, day: number, start = '11:00', end = '23:00',
 }
 
 export const INITIAL_SCHEDULES: Schedule[] = [
-  ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-cocina-1', d)),
   ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-cocina-2', d)),
   ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-cocina-3', d)),
   ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-cocina-4', d)),
@@ -240,7 +217,6 @@ export const INITIAL_SCHEDULES: Schedule[] = [
   ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-cocina-8', d, '12:00', '23:00')),
   ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-cocina-9', d)),
 
-  ...[1, 2, 4, 5, 6, 0].map((d) => createShift('emp-salon-1', d)),
   ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-2', d)),
   ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-salon-3', d)),
   ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-salon-4', d)),
@@ -275,9 +251,9 @@ export const DEFAULT_CONFIG: SystemConfig = {
 };
 
 const STORAGE_KEYS = {
-  EMPLOYEES_V3: 'store_attendance_employees_v3',
+  EMPLOYEES_V3: 'store_attendance_employees_v5',
   ATTENDANCE_V3: 'store_attendance_records_v3',
-  SCHEDULES_V3: 'store_attendance_schedules_v4',
+  SCHEDULES_V3: 'store_attendance_schedules_v5',
   CONFIG_V3: 'store_attendance_config_v3',
 };
 
@@ -290,11 +266,18 @@ export const getLocalEmployees = (): Employee[] => {
   }
   try {
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed) || parsed.length < 10) {
+    if (!Array.isArray(parsed) || parsed.length < 8) {
       localStorage.setItem(STORAGE_KEYS.EMPLOYEES_V3, JSON.stringify(INITIAL_EMPLOYEES));
       return INITIAL_EMPLOYEES;
     }
-    return parsed;
+    // Excluir a Adrian y Alexander de la asistencia
+    const filtered = parsed.filter(
+      (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1'
+    );
+    if (filtered.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.EMPLOYEES_V3, JSON.stringify(filtered));
+    }
+    return filtered;
   } catch {
     return INITIAL_EMPLOYEES;
   }
@@ -302,7 +285,11 @@ export const getLocalEmployees = (): Employee[] => {
 
 export const saveLocalEmployees = (employees: Employee[]) => {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEYS.EMPLOYEES_V3, JSON.stringify(employees));
+  // Excluir a Adrian y Alexander de la asistencia
+  const filtered = employees.filter(
+    (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1'
+  );
+  localStorage.setItem(STORAGE_KEYS.EMPLOYEES_V3, JSON.stringify(filtered));
 };
 
 export const getLocalAttendance = (): Attendance[] => {
@@ -330,11 +317,14 @@ export const getLocalSchedules = (): Schedule[] => {
   }
   try {
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed) || parsed.length < 100) {
+    if (!Array.isArray(parsed) || parsed.length < 80) {
       localStorage.setItem(STORAGE_KEYS.SCHEDULES_V3, JSON.stringify(INITIAL_SCHEDULES));
       return INITIAL_SCHEDULES;
     }
-    return parsed;
+    const filtered = parsed.filter(
+      (s: Schedule) => s.employee_id !== 'emp-cocina-1' && s.employee_id !== 'emp-salon-1'
+    );
+    return filtered;
   } catch {
     return INITIAL_SCHEDULES;
   }

@@ -22,6 +22,7 @@ import {
   currentServerConfig,
   addOrUpdateServerAttendance,
 } from '@/lib/server-state';
+import { getCloudAttendances } from '@/lib/cloud-storage';
 import { INITIAL_EMPLOYEES, INITIAL_SCHEDULES } from '@/lib/mock-storage';
 
 export async function GET(req: NextRequest) {
@@ -102,18 +103,26 @@ async function handleTelegramReport(req: NextRequest) {
       return t >= todayStartTime && t <= todayEndTime;
     };
 
-    // 1. Obtener todos los colaboradores activos (19 de Cocina y Salón)
-    let allEmployees: Employee[] = INITIAL_EMPLOYEES;
+    // 1. Obtener todos los colaboradores activos (17 de Cocina y Salón, excluyendo a Adrian y Alexander)
+    let allEmployees: Employee[] = INITIAL_EMPLOYEES.filter(
+      (e) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1'
+    );
     if (supabase) {
       const { data: emps } = await supabase.from('employees').select('*').eq('active', true);
       if (emps && emps.length > 0) {
-        allEmployees = emps;
+        allEmployees = emps.filter(
+          (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1'
+        );
       }
     }
 
     // 2. Obtener horarios correspondientes al día de hoy según la malla horaria oficial
     let todaySchedules: Schedule[] = INITIAL_SCHEDULES.filter(
-      (s) => s.day_of_week === currentDayOfWeek && s.is_active
+      (s) =>
+        s.day_of_week === currentDayOfWeek &&
+        s.is_active &&
+        s.employee_id !== 'emp-cocina-1' &&
+        s.employee_id !== 'emp-salon-1'
     );
     if (supabase) {
       const { data: schs } = await supabase
@@ -122,15 +131,21 @@ async function handleTelegramReport(req: NextRequest) {
         .eq('day_of_week', currentDayOfWeek)
         .eq('is_active', true);
       if (schs && schs.length > 0) {
-        todaySchedules = schs;
+        todaySchedules = schs.filter(
+          (s: Schedule) => s.employee_id !== 'emp-cocina-1' && s.employee_id !== 'emp-salon-1'
+        );
       }
     }
 
     const scheduleMap = new Map<string, Schedule>();
     todaySchedules.forEach((s) => scheduleMap.set(s.employee_id, s));
 
-    // 3. Obtener todas las marcaciones del servidor y/o Supabase
-    let allAttendances: Attendance[] = [...serverAttendances];
+    // 3. Obtener todas las marcaciones del almacenamiento central en la nube
+    const cloudAtts = await getCloudAttendances();
+    const idMap = new Map<string, Attendance>();
+    serverAttendances.forEach((a) => idMap.set(a.id, a));
+    cloudAtts.forEach((a) => idMap.set(a.id, a));
+
     if (supabase) {
       const { data: dbAtts } = await supabase
         .from('attendance')
@@ -138,14 +153,11 @@ async function handleTelegramReport(req: NextRequest) {
         .gte('clock_in', todayStart)
         .lte('clock_in', todayEnd);
       if (dbAtts && dbAtts.length > 0) {
-        const idSet = new Set(allAttendances.map((a) => a.id));
-        dbAtts.forEach((att) => {
-          if (!idSet.has(att.id)) {
-            allAttendances.push(att);
-          }
-        });
+        dbAtts.forEach((att: Attendance) => idMap.set(att.id, att));
       }
     }
+
+    const allAttendances: Attendance[] = Array.from(idMap.values());
 
     // Marcaciones de hoy
     const todayAttendances = allAttendances.filter((a) => isToday(a.clock_in));
