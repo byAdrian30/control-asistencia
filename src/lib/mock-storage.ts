@@ -252,7 +252,7 @@ export const DEFAULT_CONFIG: SystemConfig = {
 
 const STORAGE_KEYS = {
   EMPLOYEES_V3: 'store_attendance_employees_v5',
-  ATTENDANCE_V3: 'store_attendance_records_v3',
+  ATTENDANCE_V3: 'store_attendance_records_v5',
   SCHEDULES_V3: 'store_attendance_schedules_v5',
   CONFIG_V3: 'store_attendance_config_v3',
 };

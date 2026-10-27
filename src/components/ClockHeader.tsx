@@ -20,7 +20,7 @@ export default function ClockHeader({
   onRefresh,
   isRefreshing = false,
   activeCount = 0,
-  totalCount = 19,
+  totalCount = 17,
 }: ClockHeaderProps) {
   const [time, setTime] = useState<string>('');
   const [seconds, setSeconds] = useState<string>('');
@@ -135,7 +135,7 @@ export default function ClockHeader({
           <div className="hidden sm:flex items-center gap-2.5">
             <div className="text-right mr-2 hidden md:block">
               <p className="text-xs font-bold text-slate-200">Personal Registrado</p>
-              <p className="text-[11px] text-slate-400 font-mono">19 Colaboradores</p>
+              <p className="text-[11px] text-slate-400 font-mono">{totalCount} Colaboradores</p>
             </div>
             <button
               onClick={onRefresh}

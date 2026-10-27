@@ -477,9 +477,16 @@ export default function AttendanceHomePage() {
     }
   };
 
-  const workingNowCount = attendances.filter((a) => !a.clock_out).length;
-  const completedCount = attendances.filter((a) => a.clock_out).length;
-  const lateCount = attendances.filter((a) => a.minutes_late > 0).length;
+  const activeEmpIds = new Set(employees.map((e) => e.id));
+  const workingNowCount = attendances.filter(
+    (a) => !a.clock_out && activeEmpIds.has(a.employee_id)
+  ).length;
+  const completedCount = attendances.filter(
+    (a) => a.clock_out && activeEmpIds.has(a.employee_id)
+  ).length;
+  const lateCount = attendances.filter(
+    (a) => (a.minutes_late || 0) > 0 && activeEmpIds.has(a.employee_id)
+  ).length;
 
   const [currentDayOfWeek, setCurrentDayOfWeek] = useState(1);
 
