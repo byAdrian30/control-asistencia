@@ -114,3 +114,37 @@ export async function saveCloudAttendance(record: Attendance): Promise<Attendanc
 
   return updatedList;
 }
+
+/**
+ * Guarda o reemplaza la lista completa de marcaciones en la base de datos central en la nube
+ */
+export async function saveCloudAttendancesList(records: Attendance[]): Promise<Attendance[]> {
+  cachedAttendances = records;
+  lastAttendancesFetchTime = Date.now();
+
+  if (!GITHUB_TOKEN || !GIST_ID) {
+    return records;
+  }
+
+  try {
+    await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `token ${GITHUB_TOKEN}`,
+        'User-Agent': 'Shimaya-Attendance-App',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        files: {
+          'attendances.json': {
+            content: JSON.stringify(records, null, 2),
+          },
+        },
+      }),
+    });
+  } catch (err) {
+    console.error('Error guardando lista completa en almacenamiento central:', err);
+  }
+
+  return records;
+}

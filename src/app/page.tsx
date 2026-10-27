@@ -110,19 +110,31 @@ export default function AttendanceHomePage() {
       })
       .catch(() => {});
 
-    // Sincronizar marcaciones centrales con el servidor
+    // Sincronizar marcaciones centrales con el servidor y respaldar en ambos sentidos
     fetch('/api/attendance')
       .then((r) => r.json())
       .then((serverAtts: Attendance[]) => {
-        if (Array.isArray(serverAtts) && serverAtts.length > 0) {
+        if (Array.isArray(serverAtts)) {
           setAttendances((prev) => {
             const map = new Map<string, Attendance>();
+            // 1. Resguardar marcaciones locales existentes
             prev.forEach((a) => map.set(a.id, a));
+            // 2. Incorporar marcaciones de la nube
             serverAtts.forEach((a) => map.set(a.id, a));
             const merged = Array.from(map.values()).sort(
               (a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime()
             );
             saveLocalAttendance(merged);
+
+            // 3. Si en este dispositivo había marcaciones que aún no estaban en la nube, sincronizarlas
+            if (prev.length > 0 && merged.length > serverAtts.length) {
+              fetch('/api/attendance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(merged),
+              }).catch(() => {});
+            }
+
             return merged;
           });
         }

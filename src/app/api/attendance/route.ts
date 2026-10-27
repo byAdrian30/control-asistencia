@@ -31,7 +31,40 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const record: Attendance = await req.json();
+    const body = await req.json();
+    if (!body) {
+      return NextResponse.json({ error: 'Payload vacío' }, { status: 400 });
+    }
+
+    // Si es un array de sincronización masiva
+    if (Array.isArray(body)) {
+      const currentCloud = await getCloudAttendances();
+      const idMap = new Map<string, Attendance>();
+      currentCloud.forEach((a) => idMap.set(a.id, a));
+      serverAttendances.forEach((a) => idMap.set(a.id, a));
+
+      body.forEach((item: Attendance) => {
+        if (item && item.id) {
+          idMap.set(item.id, item);
+          addOrUpdateServerAttendance(item);
+        }
+      });
+
+      const merged = Array.from(idMap.values()).sort(
+        (a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime()
+      );
+
+      const { saveCloudAttendancesList } = await import('@/lib/cloud-storage');
+      await saveCloudAttendancesList(merged);
+
+      return NextResponse.json({
+        success: true,
+        count: merged.length,
+        attendances: merged,
+      });
+    }
+
+    const record: Attendance = body;
     if (!record || !record.id) {
       return NextResponse.json({ error: 'Registro inválido' }, { status: 400 });
     }
