@@ -160,11 +160,11 @@ export const INITIAL_EMPLOYEES: Employee[] = [
   },
   {
     id: 'emp-salon-9',
-    slug: 'tatiana-escobar',
-    name: 'Tatiana Escobar',
+    slug: 'tatiana-bonilla',
+    name: 'Tatiana Bonilla La Serna',
     code: '',
     has_custom_pin: false,
-    role: 'Nuevo PT - Atención',
+    role: 'Aprendiendo: Atención (Part Time)',
     area: 'Salón',
     avatar_color: '#d97706',
     active: true,
@@ -195,25 +195,46 @@ function createShift(empId: string, day: number, start = '11:00', end = '23:00',
 }
 
 export const INITIAL_SCHEDULES: Schedule[] = [
-  ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-cocina-2', d)),
+  // ================= COCINA (Malla oficial 02/11 al 08/11) =================
+  // Doris Rojas: Martes descanso -> [1, 3, 4, 5, 6, 0]
+  ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-cocina-2', d)),
+  // Brad Perez: Jueves descanso -> [1, 2, 3, 5, 6, 0]
   ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-cocina-3', d)),
-  ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-cocina-4', d)),
+  // Mayleb Castro: Lunes descanso -> [2, 3, 4, 5, 6, 0]
+  ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-cocina-4', d)),
+  // Michel Carhuanco PT: Martes descanso -> [1, 3, 4, 5] (15:00-23:00) y [6, 0] (11:00-23:00)
   ...[1, 3, 4, 5].map((d) => createShift('emp-cocina-5', d, '15:00', '23:00')),
   createShift('emp-cocina-5', 6, '11:00', '23:00'),
   createShift('emp-cocina-5', 0, '11:00', '23:00'),
+  // Nayeli Chavez: Miercoles descanso -> [1, 2, 4, 5, 6, 0]
   ...[1, 2, 4, 5, 6, 0].map((d) => createShift('emp-cocina-6', d)),
+  // Renzo Bustamante: Miercoles descanso -> [1, 2, 4, 5, 6, 0]
   ...[1, 2, 4, 5, 6, 0].map((d) => createShift('emp-cocina-7', d)),
+  // Rosa Naomi: Martes descanso -> [1, 3, 4, 5, 6, 0] (12:00-23:00)
   ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-cocina-8', d, '12:00', '23:00')),
+  // Rossy Ramos: Lunes descanso -> [2, 3, 4, 5, 6, 0]
   ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-cocina-9', d)),
 
-  ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-2', d)),
+  // ================= SALÓN (Malla oficial 02/11 al 08/11) =================
+  // Angela Baldera: Miercoles descanso -> [1, 2, 4, 5, 6, 0]
+  ...[1, 2, 4, 5, 6, 0].map((d) => createShift('emp-salon-2', d)),
+  // Marjorie Gallardo: Jueves descanso -> [1, 2, 3, 5, 6, 0]
   ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-salon-3', d)),
-  ...[1, 2, 3, 5, 6, 0].map((d) => createShift('emp-salon-4', d)),
+  // Alessandro Del Piero: Martes descanso -> [1, 3, 4, 5, 6, 0]
+  ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-4', d)),
+  // Axl Llontop: Lunes descanso -> [2, 3, 4, 5, 6, 0]
   ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-5', d)),
-  ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-6', d)),
-  ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-7', d)),
-  ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-9', d, '15:00', '23:00')),
-
+  // Leandro Heredia: Martes descanso -> [1, 3, 4, 5, 6, 0]
+  ...[1, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-6', d)),
+  // Manuel Torres: Lunes descanso -> [2, 3, 4, 5, 6, 0]
+  ...[2, 3, 4, 5, 6, 0].map((d) => createShift('emp-salon-7', d)),
+  // Tatiana Bonilla La Serna: Lunes/Jueves descanso, Martes/Miercoles 17:00-23:00, Viernes/Sabado/Domingo FT 11:00-23:00
+  createShift('emp-salon-9', 2, '17:00', '23:00'),
+  createShift('emp-salon-9', 3, '17:00', '23:00'),
+  createShift('emp-salon-9', 5, '11:00', '23:00'),
+  createShift('emp-salon-9', 6, '11:00', '23:00'),
+  createShift('emp-salon-9', 0, '11:00', '23:00'),
+  // Yurikho Ruiz: Lunes 13:45, Martes 14:00, Miercoles/Jueves descanso, Viernes FT 11:00, Sabado FT 11:00, Domingo 13:45
   createShift('emp-salon-10', 1, '13:45', '23:00'),
   createShift('emp-salon-10', 2, '14:00', '23:00'),
   createShift('emp-salon-10', 5, '11:00', '23:00'),

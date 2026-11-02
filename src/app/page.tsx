@@ -55,18 +55,41 @@ export default function AttendanceHomePage() {
   const loadData = useCallback(async () => {
     setIsRefreshing(true);
 
+    // Detección y auto-cierre automático de jornadas huérfanas de días anteriores (después de la 1:00 AM)
+    const peruNow = new Date();
+    const todayPeruDateStr = peruNow.toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+    let hasOrphanedClosures = false;
+
     // Filtrar marcaciones accidentales o de colaboradores excluidos
-    const sanitizeAtts = (list: Attendance[]) =>
-      list.filter((a) => {
-        if (a.employee_id === 'emp-salon-8' || a.employee_id === 'emp-cocina-1' || a.employee_id === 'emp-salon-1') {
-          return false;
-        }
-        if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
-          const dateStr = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-          if (dateStr === '2026-10-27') return false;
-        }
-        return true;
-      });
+    const sanitizeAtts = (list: Attendance[]) => {
+      return list
+        .filter((a) => {
+          if (a.employee_id === 'emp-salon-8' || a.employee_id === 'emp-cocina-1' || a.employee_id === 'emp-salon-1') {
+            return false;
+          }
+          return true;
+        })
+        .map((a) => {
+          // Si una marcación no tiene salida y es de un día anterior en Perú
+          if (!a.clock_out && a.clock_in) {
+            const punchDateStr = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+            if (punchDateStr < todayPeruDateStr) {
+              hasOrphanedClosures = true;
+              const closeDate = new Date(a.clock_in);
+              closeDate.setHours(closeDate.getHours() + 12);
+              return {
+                ...a,
+                clock_out: closeDate.toISOString(),
+                auto_closed: true,
+                notes: a.notes
+                  ? `${a.notes} | Cierre auto 1:00 AM`
+                  : 'Cierre automático a la 1:00 AM (Personal no marcó salida)',
+              };
+            }
+          }
+          return a;
+        });
+    };
 
     const sanitizeEmps = (list: Employee[]) =>
       list.filter(
@@ -156,6 +179,13 @@ export default function AttendanceHomePage() {
           const merged = sanitizeAtts(atts);
           setAttendances(merged);
           saveLocalAttendance(merged);
+          if (hasOrphanedClosures) {
+            fetch('/api/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ attendances: merged }),
+            }).catch(() => {});
+          }
         }
 
         const { data: schs } = await supabase.from('schedules').select('*');

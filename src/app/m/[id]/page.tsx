@@ -185,7 +185,14 @@ function PersonalPunchContent({ params }: PageProps) {
     return () => clearInterval(timer);
   }, [employeeIdentifier]);
 
-  const activeAttendance = attendances.find((a) => !a.clock_out);
+  // Solo se considera sesión activa si fue iniciada en la fecha actual en Perú
+  const todayDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+  const activeAttendance = attendances.find((a) => {
+    if (a.clock_out) return false;
+    if (!a.clock_in) return false;
+    const punchDateStr = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+    return punchDateStr === todayDateStr;
+  });
   const isWorking = Boolean(activeAttendance);
   const targetAction: 'in' | 'out' = isWorking ? 'out' : 'in';
 

@@ -20,10 +20,9 @@ export async function GET() {
   cloudList.forEach((a) => idMap.set(a.id, a));
   const list = Array.from(idMap.values())
     .filter((a) => {
-      // Excluir marcación de Mayleb hoy martes (día de descanso oficial)
-      if (a.employee_id === 'emp-cocina-4' && a.clock_in) {
-        const d = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-        if (d === '2026-10-27') return false;
+      // Excluir líderes y Raquel
+      if (a.employee_id === 'emp-cocina-1' || a.employee_id === 'emp-salon-1' || a.employee_id === 'emp-salon-8') {
+        return false;
       }
       return true;
     })
@@ -76,12 +75,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Registro inválido' }, { status: 400 });
     }
 
-    // Si se intenta registrar marcación a Mayleb hoy martes, ignorar porque descansa hoy
-    if (record.employee_id === 'emp-cocina-4') {
-      const d = new Date(record.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-      if (d === '2026-10-27') {
-        return NextResponse.json({ success: true, message: 'Colaborador en descanso hoy' });
-      }
+    // Excluir líderes y Raquel
+    if (record.employee_id === 'emp-cocina-1' || record.employee_id === 'emp-salon-1' || record.employee_id === 'emp-salon-8') {
+      return NextResponse.json({ success: true, message: 'Colaborador excluido de control de asistencia' });
     }
 
     // Guardar en memoria y persistir en la base de datos central en la nube

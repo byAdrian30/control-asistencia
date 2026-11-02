@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase } from '@/lib/supabase';
+import { getCloudFullState, saveCloudFullState } from '@/lib/cloud-storage';
+import { serverAttendances, addOrUpdateServerAttendance } from '@/lib/server-state';
 
 export async function GET(req: NextRequest) {
   return handleAutoCheckout(req);
@@ -23,60 +25,66 @@ async function handleAutoCheckout(req: NextRequest) {
       }
     }
 
-    const supabase = getServiceSupabase();
-
-    if (!supabase) {
-      return NextResponse.json({
-        success: false,
-        message: 'Supabase no configurado en variables de entorno del servidor. Si estás en modo demo local, el auto-cierre se procesa en la app cliente.',
-      });
-    }
-
-    // Hora límite: cualquier marcación abierta de hace más de 4 horas o anterior a las 00:00 de hoy
     const now = new Date();
-    const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000).toISOString();
+    const todayPeru = now.toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
 
-    // 1. Buscar registros sin cerrar
-    const { data: openRecords, error: fetchError } = await supabase
-      .from('attendance')
-      .select('id, employee_id, clock_in')
-      .is('clock_out', null)
-      .lt('clock_in', fourHoursAgo);
+    // 1. Obtener estado central
+    const cloudState = await getCloudFullState();
+    const attendances = cloudState.attendances || [];
 
-    if (fetchError) {
-      return NextResponse.json({ error: fetchError.message }, { status: 500 });
-    }
+    const closedIds: string[] = [];
+    const updatedAttendances = attendances.map((att) => {
+      if (!att.clock_out && att.clock_in) {
+        const attDatePeru = new Date(att.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+        const diffHours = (now.getTime() - new Date(att.clock_in).getTime()) / (1000 * 60 * 60);
 
-    if (!openRecords || openRecords.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: 'No hay jornadas abiertas pendientes de auto-cierre.',
-        closedCount: 0,
-        timestamp: now.toISOString(),
-      });
-    }
+        // Si la marcación es de un día anterior en Perú O si han transcurrido más de 6 horas
+        if (attDatePeru < todayPeru || diffHours >= 6) {
+          closedIds.push(att.id);
 
-    const recordIds = openRecords.map((r) => r.id);
+          // Cierre a la 1:00 AM del día posterior a su inicio (o la hora actual)
+          const closeTime = new Date(att.clock_in);
+          closeTime.setHours(closeTime.getHours() + 12);
+          const finalClose = closeTime.getTime() < now.getTime() ? closeTime.toISOString() : now.toISOString();
 
-    // 2. Actualizar registros: marcar salida a las 01:00 AM (o fecha actual de ejecución) y auto_closed = true
-    const { error: updateError } = await supabase
-      .from('attendance')
-      .update({
-        clock_out: now.toISOString(),
-        auto_closed: true,
-        notes: 'Cierre automático a la 1:00 AM (Personal no marcó salida)',
-      })
-      .in('id', recordIds);
+          const closedRecord = {
+            ...att,
+            clock_out: finalClose,
+            auto_closed: true,
+            notes: att.notes
+              ? `${att.notes} | Cierre automático 1:00 AM`
+              : 'Cierre automático a la 1:00 AM (Personal no marcó salida)',
+          };
+          addOrUpdateServerAttendance(closedRecord);
+          return closedRecord;
+        }
+      }
+      return att;
+    });
 
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    if (closedIds.length > 0) {
+      // Guardar en almacenamiento central en la nube
+      await saveCloudFullState({ attendances: updatedAttendances });
+
+      // Guardar en Supabase PostgreSQL
+      const supabase = getServiceSupabase();
+      if (supabase) {
+        await supabase
+          .from('attendance')
+          .update({
+            clock_out: now.toISOString(),
+            auto_closed: true,
+            notes: 'Cierre automático a la 1:00 AM (Personal no marcó salida)',
+          })
+          .in('id', closedIds);
+      }
     }
 
     return NextResponse.json({
       success: true,
-      message: `Se desloguearon automáticamente ${recordIds.length} colaborador(es) que no marcaron salida.`,
-      closedCount: recordIds.length,
-      closedIds: recordIds,
+      message: `Se cerraron automáticamente ${closedIds.length} sesión(es) abiertas.`,
+      closedCount: closedIds.length,
+      closedIds,
       timestamp: now.toISOString(),
     });
   } catch (error: unknown) {

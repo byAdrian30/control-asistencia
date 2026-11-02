@@ -38,11 +38,15 @@ export default function KioskMode({
   const [directPin, setDirectPin] = useState('');
   const [directPinError, setDirectPinError] = useState('');
 
-  // Mapear asistencias activas
+  // Mapear asistencias activas únicamente de la fecha en curso en Perú
+  const todayDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
   const activeAttendanceMap = new Map<string, Attendance>();
   attendances.forEach((att) => {
-    if (!att.clock_out) {
-      activeAttendanceMap.set(att.employee_id, att);
+    if (!att.clock_out && att.clock_in) {
+      const punchDateStr = new Date(att.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+      if (punchDateStr === todayDateStr) {
+        activeAttendanceMap.set(att.employee_id, att);
+      }
     }
   });
 
