@@ -263,7 +263,8 @@ export const getLocalEmployees = (): Employee[] => {
       (e: Employee) =>
         e.id !== 'emp-cocina-1' &&
         e.id !== 'emp-salon-1' &&
-        e.id !== 'emp-salon-8'
+        e.id !== 'emp-salon-8' &&
+        !e.name?.toLowerCase().includes('raquel')
     );
     if (filtered.length !== parsed.length) {
       localStorage.setItem(STORAGE_KEYS.EMPLOYEES_V3, JSON.stringify(filtered));

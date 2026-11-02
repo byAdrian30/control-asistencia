@@ -68,8 +68,17 @@ export default function AttendanceHomePage() {
         return true;
       });
 
+    const sanitizeEmps = (list: Employee[]) =>
+      list.filter(
+        (e: Employee) =>
+          e.id !== 'emp-cocina-1' &&
+          e.id !== 'emp-salon-1' &&
+          e.id !== 'emp-salon-8' &&
+          !e.name?.toLowerCase().includes('raquel')
+      );
+
     // 1. Cargar estado local inmediato para evitar parpadeos
-    let loadedEmps = getLocalEmployees();
+    let loadedEmps = sanitizeEmps(getLocalEmployees());
     let loadedAtts = sanitizeAtts(getLocalAttendance());
     let loadedSchs = getLocalSchedules();
     const initialLocalConfig = getLocalConfig();
@@ -86,9 +95,7 @@ export default function AttendanceHomePage() {
         const cloudState = await syncRes.json();
         if (cloudState) {
           if (Array.isArray(cloudState.employees) && cloudState.employees.length > 0) {
-            loadedEmps = cloudState.employees.filter(
-              (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
-            );
+            loadedEmps = sanitizeEmps(cloudState.employees);
             setEmployees(loadedEmps);
             saveLocalEmployees(loadedEmps);
           }
@@ -135,20 +142,17 @@ export default function AttendanceHomePage() {
           .select('*')
           .order('name');
         if (!empErr && emps && emps.length > 0) {
-          loadedEmps = emps.filter(
-            (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
-          );
+          loadedEmps = sanitizeEmps(emps);
           setEmployees(loadedEmps);
           saveLocalEmployees(loadedEmps);
         }
 
-        const now = new Date();
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
         const { data: atts } = await supabase
           .from('attendance')
           .select('*')
-          .gte('clock_in', startOfDay);
-        if (atts) {
+          .order('clock_in', { ascending: false })
+          .limit(300);
+        if (atts && atts.length > 0) {
           const merged = sanitizeAtts(atts);
           setAttendances(merged);
           saveLocalAttendance(merged);
@@ -290,59 +294,12 @@ export default function AttendanceHomePage() {
     distance?: number;
   }): Promise<boolean> => {
     const nowIso = new Date().toISOString();
+    const newRecordId = payload.attendanceId || `att-${Date.now()}`;
 
-    if (isConnected && supabase) {
-      try {
-        if (payload.action === 'in') {
-          const { data, error } = await supabase
-            .from('attendance')
-            .insert({
-              employee_id: payload.employeeId,
-              clock_in: nowIso,
-              minutes_late: payload.minutesLate,
-              notes: payload.notes || null,
-              clock_in_lat: payload.lat || null,
-              clock_in_lng: payload.lng || null,
-              clock_in_distance_meters: payload.distance || null,
-              device_id: deviceId,
-              device_name: deviceDesc,
-              verified_by_gps: true,
-              verified_by_device: true,
-            })
-            .select()
-            .single();
-
-          if (error) return false;
-          if (data) setAttendances((prev) => [data, ...prev]);
-        } else {
-          const attId = payload.attendanceId;
-          if (!attId) return false;
-
-          const { error } = await supabase
-            .from('attendance')
-            .update({
-              clock_out: nowIso,
-              clock_out_lat: payload.lat || null,
-              clock_out_lng: payload.lng || null,
-            })
-            .eq('id', attId);
-
-          if (error) return false;
-
-          setAttendances((prev) =>
-            prev.map((a) => (a.id === attId ? { ...a, clock_out: nowIso } : a))
-          );
-        }
-        return true;
-      } catch (err) {
-        console.error('Error en marcación:', err);
-        return false;
-      }
-    } else {
-      // Modo Local con almacenamiento persistente
+    try {
       if (payload.action === 'in') {
         const newRecord: Attendance = {
-          id: `att-${Date.now()}`,
+          id: newRecordId,
           employee_id: payload.employeeId,
           clock_in: nowIso,
           clock_out: null,
@@ -358,17 +315,54 @@ export default function AttendanceHomePage() {
           verified_by_device: true,
           verified_by_biometrics: true,
         };
-        const updated = [newRecord, ...attendances];
+
+        // 1. Actualización inmediata en UI y almacenamiento local
+        const updated = [newRecord, ...attendances.filter((a) => a.id !== newRecordId)];
         setAttendances(updated);
         saveLocalAttendance(updated);
+
+        // 2. Notificación y guardado en API central (Telegram + Gist + Supabase)
         fetch('/api/attendance', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newRecord),
-        }).catch(() => {});
+        }).catch((e) => console.warn('API attendance dispatch error:', e));
+
+        // 3. Réplica directa a Supabase con ID garantizado
+        if (isConnected && supabase) {
+          (async () => {
+            try {
+              const { error } = await supabase
+                .from('attendance')
+                .upsert(
+                  {
+                    id: newRecordId,
+                    employee_id: payload.employeeId,
+                    clock_in: nowIso,
+                    minutes_late: payload.minutesLate,
+                    notes: payload.notes || null,
+                    clock_in_lat: payload.lat || null,
+                    clock_in_lng: payload.lng || null,
+                    clock_in_distance_meters: payload.distance || null,
+                    device_id: deviceId,
+                    device_name: deviceDesc,
+                    verified_by_gps: true,
+                    verified_by_device: true,
+                    verified_by_biometrics: true,
+                  },
+                  { onConflict: 'id' }
+                );
+              if (error) console.warn('Supabase direct punch warning:', error.message);
+            } catch (sbErr) {
+              console.warn('Supabase async punch exception:', sbErr);
+            }
+          })();
+        }
       } else {
+        // Marcación de Salida
+        const targetId = payload.attendanceId;
         const updated = attendances.map((a) => {
-          if (a.id === payload.attendanceId || (a.employee_id === payload.employeeId && !a.clock_out)) {
+          if (a.id === targetId || (a.employee_id === payload.employeeId && !a.clock_out)) {
             return {
               ...a,
               clock_out: nowIso,
@@ -378,19 +372,43 @@ export default function AttendanceHomePage() {
           }
           return a;
         });
+
         setAttendances(updated);
         saveLocalAttendance(updated);
+
         const updatedRecord = updated.find(
-          (a) => a.id === payload.attendanceId || (a.employee_id === payload.employeeId && a.clock_out === nowIso)
+          (a) => a.id === targetId || (a.employee_id === payload.employeeId && a.clock_out === nowIso)
         );
+
         if (updatedRecord) {
           fetch('/api/attendance', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(updatedRecord),
-          }).catch(() => {});
+          }).catch((e) => console.warn('API attendance dispatch error:', e));
+
+          if (isConnected && supabase) {
+            (async () => {
+              try {
+                const { error } = await supabase
+                  .from('attendance')
+                  .update({
+                    clock_out: nowIso,
+                    clock_out_lat: payload.lat || null,
+                    clock_out_lng: payload.lng || null,
+                  })
+                  .eq('id', updatedRecord.id);
+                if (error) console.warn('Supabase direct clock-out warning:', error.message);
+              } catch (sbErr) {
+                console.warn('Supabase async clock-out exception:', sbErr);
+              }
+            })();
+          }
         }
       }
+      return true;
+    } catch (err) {
+      console.error('Error procesando marcación:', err);
       return true;
     }
   };

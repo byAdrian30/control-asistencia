@@ -187,6 +187,19 @@ export async function DELETE(req: Request) {
     const filtered = currentCloud.filter((a) => a.employee_id !== deleteEmployeeId);
     await saveCloudAttendancesList(filtered);
 
+    // Purgar también en Supabase
+    try {
+      const { getServiceSupabase } = await import('@/lib/supabase');
+      const sb = getServiceSupabase();
+      if (sb) {
+        await sb.from('attendance').delete().eq('employee_id', deleteEmployeeId);
+        await sb.from('schedules').delete().eq('employee_id', deleteEmployeeId);
+        await sb.from('employees').delete().eq('id', deleteEmployeeId);
+      }
+    } catch (e) {
+      console.warn('Supabase delete API mirror error:', e);
+    }
+
     return NextResponse.json({ success: true, count: filtered.length });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Error al eliminar';
