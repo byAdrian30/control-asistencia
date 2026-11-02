@@ -1,13 +1,72 @@
 /**
- * Envía un mensaje a Telegram mediante el Bot API
+ * Integración con Telegram Bot API
+ * Soporta envío de mensajes, botones interactivos (inline keyboards),
+ * confirmación de callbacks y generación de reportes estructurados.
+ */
+
+export interface TelegramButton {
+  text: string;
+  callback_data?: string;
+  url?: string;
+}
+
+export interface TelegramInlineKeyboard {
+  inline_keyboard: TelegramButton[][];
+}
+
+/**
+ * Retorna los botones interactivos principales para Telegram
+ */
+export function getDefaultTelegramButtons(): TelegramInlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: '🔄 Estatus en Vivo de Hoy', callback_data: 'status_now' }
+      ],
+      [
+        { text: '📅 Reportes de Otros Días', callback_data: 'menu_dates' }
+      ],
+      [
+        { text: '🌐 Abrir App de Asistencia', url: 'https://asistencia-tienda.vercel.app' }
+      ]
+    ]
+  };
+}
+
+/**
+ * Responde inmediatamente a un clic de botón en Telegram para quitar el reloj de carga
+ */
+export async function answerCallbackQuery(params: {
+  botToken: string;
+  callbackQueryId: string;
+  text?: string;
+}): Promise<void> {
+  const { botToken, callbackQueryId, text } = params;
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        text,
+      }),
+    });
+  } catch (e) {
+    console.warn('Error respondiendo callback_query:', e);
+  }
+}
+
+/**
+ * Envía un mensaje a Telegram mediante el Bot API (soporta botones interactivos)
  */
 export async function sendTelegramMessage(params: {
   botToken: string;
-  chatId: string;
+  chatId: string | number;
   message: string;
   parseMode?: 'Markdown' | 'HTML';
+  replyMarkup?: TelegramInlineKeyboard;
 }): Promise<{ success: boolean; error?: string; responseData?: unknown }> {
-  const { botToken, chatId, message, parseMode = 'Markdown' } = params;
+  const { botToken, chatId, message, parseMode = 'Markdown', replyMarkup } = params;
 
   if (!botToken || !chatId) {
     return {
@@ -18,14 +77,19 @@ export async function sendTelegramMessage(params: {
 
   try {
     const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+    const payload: Record<string, unknown> = {
+      chat_id: chatId,
+      text: message,
+      parse_mode: parseMode,
+    };
+    if (replyMarkup) {
+      payload.reply_markup = replyMarkup;
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: message,
-        parse_mode: parseMode,
-      }),
+      body: JSON.stringify(payload),
     });
 
     const data = await response.json();
@@ -80,18 +144,14 @@ function cleanMd(text?: string): string {
 }
 
 /**
- * Genera el reporte formateado en Markdown para Telegram para el reporte del mediodía (12:00 PM).
- * Desglosa:
- * 1. Colaboradores que NO marcaron (Faltas pendientes del turno matutino 11:00 / 12:00)
- * 2. Colaboradores en su DÍA DE DESCANSO según la malla oficial
- * 3. Colaboradores de TURNO TARDE (entran después de las 12:00 PM)
- * 4. Colaboradores PRESENTES PUNTUALES
- * 5. Alertas de TARDANZA y pérdida del 100% de Chippu
+ * Genera el reporte formateado en Markdown para Telegram.
+ * Sin el campo PERIODO (retirado a solicitud).
+ * Por defecto configurado para el reporte diario de las 5:30 PM o consultas en vivo.
  */
 export function buildLateReportMessage(params: {
   storeName: string;
   dateStr: string;
-  quincenaLabel?: string;
+  reportTitle?: string;
   lateRecords: TelegramLateRecord[];
   onTimeRecords?: TelegramOnTimeRecord[];
   onTimeCount?: number;
@@ -104,7 +164,7 @@ export function buildLateReportMessage(params: {
   const {
     storeName,
     dateStr,
-    quincenaLabel,
+    reportTitle = '🏪 *REPORTE DE ASISTENCIA - 5:30 PM*',
     lateRecords = [],
     onTimeRecords = [],
     onTimeCount = onTimeRecords.length,
@@ -115,33 +175,31 @@ export function buildLateReportMessage(params: {
     totalEmployees = 16,
   } = params;
 
-  let msg = `🏪 *REPORTE DE ASISTENCIA - 12:00 PM*\n`;
+  let msg = `${reportTitle}\n`;
   msg += `📍 *Tienda:* ${cleanMd(storeName)}\n`;
   msg += `📅 *Fecha:* ${cleanMd(dateStr)}\n`;
-  if (quincenaLabel) {
-    msg += `🗓️ *Periodo:* ${cleanMd(quincenaLabel)}\n`;
-  }
   msg += `👥 *Total Colaboradores:* ${totalEmployees}\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `📊 *ESTADO GENERAL DEL DÍA:*\n`;
+  msg += `📊 *ESTADO GENERAL:*\n`;
   msg += `• Presentes marcados: *${totalPresent}* (A tiempo: ${onTimeCount}, Tardanzas: ${lateRecords.length})\n`;
-  msg += `• 🚨 *No marcaron (Faltas turno mañana):* *${missingRecords.length}*\n`;
-  msg += `• 🕒 *Turno tarde (Ingreso posterior):* *${afternoonRecords.length}*\n`;
+  msg += `• 🚨 *No marcaron (Faltas):* *${missingRecords.length}*\n`;
+  if (afternoonRecords.length > 0) {
+    msg += `• 🕒 *Turno tarde por ingresar:* *${afternoonRecords.length}*\n`;
+  }
   msg += `• 😴 *En día de descanso:* *${restDayRecords.length}*\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // 1. COLABORADORES QUE NO HAN MARCADO (Debieron ingresar a las 11:00 / 12:00)
+  // 1. COLABORADORES QUE NO HAN MARCADO
   if (missingRecords.length > 0) {
     msg += `🚨 *COLABORADORES QUE NO HAN MARCADO (${missingRecords.length}):*\n`;
-    msg += `_(Debieron ingresar a las 11:00 / 12:00 y no registran marcación)_\n`;
     missingRecords.forEach((item, index) => {
       const areaTag = item.area ? ` [${cleanMd(item.area)}]` : '';
       msg += `${index + 1}. *${cleanMd(item.name)}*${areaTag}\n`;
-      msg += `   ⏰ Hora esperada: \`${item.expectedTime}\`\n`;
+      msg += `   ⏰ Hora esperada de ingreso: \`${item.expectedTime}\`\n`;
     });
     msg += `\n`;
   } else {
-    msg += `✅ *FALTAS MATUTINAS:* Cero faltas, todo el personal de la mañana registró su ingreso.\n\n`;
+    msg += `✅ *ASISTENCIA COMPLETA:* Todos los colaboradores programados para hoy registraron su ingreso.\n\n`;
   }
 
   // 2. ALERTAS DE TARDANZA
@@ -162,7 +220,7 @@ export function buildLateReportMessage(params: {
     });
     msg += `\n`;
   } else {
-    msg += `✅ *PUNTUALIDAD:* Cero tardanzas hoy entre los presentes.\n\n`;
+    msg += `✅ *PUNTUALIDAD:* Cero tardanzas registradas hoy entre los presentes.\n\n`;
   }
 
   // 3. PRESENTES PUNTUALES
@@ -170,18 +228,17 @@ export function buildLateReportMessage(params: {
     msg += `🟢 *PRESENTES PUNTUALES (${onTimeRecords.length}):*\n`;
     onTimeRecords.forEach((item) => {
       const areaTag = item.area ? ` (${cleanMd(item.area)})` : '';
-      msg += `• ${cleanMd(item.name)}${areaTag} - \`${item.clockInTime}\`\n`;
+      msg += `• ${cleanMd(item.name)}${areaTag} - Ingreso: \`${item.clockInTime}\`\n`;
     });
     msg += `\n`;
   }
 
-  // 4. TURNO TARDE
+  // 4. TURNO TARDE (solo si el reporte se ejecuta antes de la hora de su turno)
   if (afternoonRecords.length > 0) {
     msg += `🕒 *TURNO TARDE - INGRESO POSTERIOR (${afternoonRecords.length}):*\n`;
-    msg += `_(No les correspondía marcar a las 12:00 PM)_\n`;
     afternoonRecords.forEach((item) => {
       const areaTag = item.area ? ` [${cleanMd(item.area)}]` : '';
-      msg += `• *${cleanMd(item.name)}*${areaTag} - Entrada programada: \`${item.expectedTime}\`\n`;
+      msg += `• *${cleanMd(item.name)}*${areaTag} - Programado: \`${item.expectedTime}\`\n`;
     });
     msg += `\n`;
   }
@@ -189,7 +246,6 @@ export function buildLateReportMessage(params: {
   // 5. EN SU DÍA DE DESCANSO
   if (restDayRecords.length > 0) {
     msg += `😴 *EN SU DÍA DE DESCANSO HOY (${restDayRecords.length}):*\n`;
-    msg += `_(Según la malla semanal oficial)_\n`;
     restDayRecords.forEach((item) => {
       const areaTag = item.area ? ` (${cleanMd(item.area)})` : '';
       msg += `• ${cleanMd(item.name)}${areaTag}\n`;
@@ -203,6 +259,6 @@ export function buildLateReportMessage(params: {
     msg += `❌ *Colaboradores que perdieron el 100% del Chippu:* ${lostChippuCount}\n\n`;
   }
 
-  msg += `_Mensaje generado automáticamente por el Sistema de Asistencia Shimaya Ramen._`;
+  msg += `_Sistema de Asistencia en la Nube · Shimaya Ramen_`;
   return msg;
 }

@@ -141,7 +141,6 @@ export async function POST(req: Request) {
 📊 *Tardanza acumulada en quincena:* *${newTotalMinutes} minutos*
 ❌ *Límite máximo permitido:* 10 minutos
 🚫 *SANCIÓN:* *HA PERDIDO EL 100% DE SU CHIPPU DE LA QUINCENA*
-📅 *Periodo:* ${quincena.label}
 ━━━━━━━━━━━━━━━━━━━━━
 
 _Aviso automático disparado de inmediato por el Sistema de Asistencia de Shimaya Ramen._`;
