@@ -27,8 +27,9 @@ export default function DeviceBindingModal({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleNextStep = () => {
-    if (pin.length < 4) {
+  const handleNextStep = (overridePin?: string) => {
+    const val = overridePin ?? pin;
+    if (val.length < 4) {
       setErrorMsg('Debes ingresar un PIN de 4 dígitos.');
       return;
     }
@@ -37,8 +38,9 @@ export default function DeviceBindingModal({
     setPinStep('confirm');
   };
 
-  const handleConfirmBind = async () => {
-    if (confirmPin !== pin) {
+  const handleConfirmBind = async (overrideConfirm?: string) => {
+    const confirmVal = overrideConfirm ?? confirmPin;
+    if (confirmVal !== pin) {
       playSound('error');
       triggerVibration([100, 100, 100]);
       setErrorMsg('Los códigos PIN no coinciden. Intenta de nuevo.');
@@ -120,13 +122,13 @@ export default function DeviceBindingModal({
               <PinPad
                 value={pin}
                 onChange={setPin}
-                onSubmit={pin.length === 4 ? handleNextStep : undefined}
+                onSubmit={handleNextStep}
               />
             ) : (
               <PinPad
                 value={confirmPin}
                 onChange={setConfirmPin}
-                onSubmit={confirmPin.length === 4 ? handleConfirmBind : undefined}
+                onSubmit={handleConfirmBind}
               />
             )}
           </div>
@@ -135,7 +137,7 @@ export default function DeviceBindingModal({
           {pinStep === 'create' ? (
             <button
               type="button"
-              onClick={handleNextStep}
+              onClick={() => handleNextStep()}
               disabled={pin.length < 4}
               className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm rounded-2xl transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-40"
             >
@@ -144,7 +146,7 @@ export default function DeviceBindingModal({
           ) : (
             <button
               type="button"
-              onClick={handleConfirmBind}
+              onClick={() => handleConfirmBind()}
               disabled={confirmPin.length < 4 || isSubmitting}
               className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-sm rounded-2xl transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-40"
             >

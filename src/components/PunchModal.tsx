@@ -55,8 +55,9 @@ export default function PunchModal({
   const targetAction: 'in' | 'out' = isWorking ? 'out' : 'in';
 
   // Paso 1 de Primera Vez: Creó 4 dígitos, pasar a confirmar
-  const handleFirstTimeCreate = () => {
-    if (initialPin.length === 4) {
+  const handleFirstTimeCreate = (overrideVal?: string) => {
+    const val = overrideVal ?? initialPin;
+    if (val.length === 4) {
       playSound('click');
       setFirstTimeStep('confirm');
       setErrorMsg('');
@@ -64,8 +65,9 @@ export default function PunchModal({
   };
 
   // Paso 2 de Primera Vez: Confirmó 4 dígitos, grabar permanentemente
-  const handleFirstTimeConfirm = async () => {
-    if (confirmPin !== initialPin) {
+  const handleFirstTimeConfirm = async (overrideConfirm?: string) => {
+    const confirmVal = overrideConfirm ?? confirmPin;
+    if (confirmVal !== initialPin) {
       playSound('error');
       triggerVibration([100, 100, 100]);
       setErrorMsg('Los códigos no coinciden. Por favor ingresa tu código nuevamente.');
@@ -77,7 +79,7 @@ export default function PunchModal({
 
     setIsSubmitting(true);
     try {
-      const ok = await onRegisterPin(employee.id, confirmPin);
+      const ok = await onRegisterPin(employee.id, confirmVal);
       if (ok) {
         playSound('in');
         triggerVibration([100, 50, 150]);
@@ -86,10 +88,10 @@ export default function PunchModal({
           spread: 60,
           origin: { y: 0.5 },
         });
-        employee.code = confirmPin;
+        employee.code = confirmVal;
         employee.has_custom_pin = true;
         setJustRegisteredPin(true);
-        setPin(confirmPin); // Ya queda pre-autenticado para este primer fichaje
+        setPin(confirmVal); // Ya queda pre-autenticado para este primer fichaje
       } else {
         setErrorMsg('Error al guardar tu contraseña. Intenta nuevamente.');
       }
@@ -101,11 +103,12 @@ export default function PunchModal({
   };
 
   // Marcación regular
-  const handleConfirmPunch = async () => {
+  const handleConfirmPunch = async (overridePin?: string) => {
     setErrorMsg('');
+    const pinToVerify = overridePin ?? pin;
 
     // Validar PIN
-    if (employee.code && pin !== employee.code) {
+    if (employee.code && pinToVerify !== employee.code) {
       playSound('error');
       triggerVibration([100, 100, 100]);
       setErrorMsg('Código PIN incorrecto. Intenta de nuevo.');
@@ -268,11 +271,11 @@ export default function PunchModal({
                 <PinPad
                   value={initialPin}
                   onChange={setInitialPin}
-                  onSubmit={initialPin.length === 4 ? handleFirstTimeCreate : undefined}
+                  onSubmit={handleFirstTimeCreate}
                 />
                 <button
                   type="button"
-                  onClick={handleFirstTimeCreate}
+                  onClick={() => handleFirstTimeCreate()}
                   disabled={initialPin.length < 4}
                   className="mt-4 w-full max-w-[280px] mx-auto py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm rounded-2xl transition-all disabled:opacity-40"
                 >
@@ -284,11 +287,11 @@ export default function PunchModal({
                 <PinPad
                   value={confirmPin}
                   onChange={setConfirmPin}
-                  onSubmit={confirmPin.length === 4 ? handleFirstTimeConfirm : undefined}
+                  onSubmit={handleFirstTimeConfirm}
                 />
                 <button
                   type="button"
-                  onClick={handleFirstTimeConfirm}
+                  onClick={() => handleFirstTimeConfirm()}
                   disabled={confirmPin.length < 4 || isSubmitting}
                   className="mt-4 w-full max-w-[280px] mx-auto py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm rounded-2xl transition-all disabled:opacity-40"
                 >
@@ -376,7 +379,7 @@ export default function PunchModal({
               <PinPad
                 value={pin}
                 onChange={setPin}
-                onSubmit={pin.length === 4 ? handleConfirmPunch : undefined}
+                onSubmit={handleConfirmPunch}
               />
             )}
 
@@ -384,7 +387,7 @@ export default function PunchModal({
             <div className="mt-4">
               <button
                 type="button"
-                onClick={handleConfirmPunch}
+                onClick={() => handleConfirmPunch()}
                 disabled={isSubmitting || pin.length < 4}
                 className={`w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2.5 shadow-lg transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed ${
                   targetAction === 'in'

@@ -255,13 +255,15 @@ function PersonalPunchContent({ params }: PageProps) {
   };
 
   // 2. VALIDACIÓN DE MARCACIÓN CON GPS Y BIOMETRÍA
-  const handleExecutePunch = async () => {
+  const handleExecutePunch = async (overridePin?: string) => {
     if (!employee) return;
     setActionError(null);
     setGpsError(null);
 
+    const pinToVerify = overridePin ?? pin;
+
     // Validar PIN
-    if (employee.code && pin !== employee.code) {
+    if (employee.code && pinToVerify !== employee.code) {
       playSound('error');
       triggerVibration([100, 100, 100]);
       setActionError('PIN de seguridad incorrecto.');
@@ -700,7 +702,7 @@ function PersonalPunchContent({ params }: PageProps) {
                 <PinPad
                   value={pin}
                   onChange={setPin}
-                  onSubmit={pin.length === 4 ? handleExecutePunch : undefined}
+                  onSubmit={handleExecutePunch}
                 />
               </div>
 
@@ -708,7 +710,7 @@ function PersonalPunchContent({ params }: PageProps) {
               <div className="mt-4">
                 <button
                   type="button"
-                  onClick={handleExecutePunch}
+                  onClick={() => handleExecutePunch()}
                   disabled={isSubmitting || pin.length < 4}
                   className={`w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2.5 shadow-xl transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed ${
                     targetAction === 'in'

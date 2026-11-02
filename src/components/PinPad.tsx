@@ -6,7 +6,7 @@ import { playSound, triggerVibration } from '@/lib/sound';
 interface PinPadProps {
   value: string;
   onChange: (value: string) => void;
-  onSubmit?: () => void;
+  onSubmit?: (val?: string) => void;
   maxLength?: number;
 }
 
@@ -23,7 +23,9 @@ export default function PinPad({
       const nextVal = value + digit;
       onChange(nextVal);
       if (nextVal.length === maxLength && onSubmit) {
-        setTimeout(onSubmit, 100);
+        setTimeout(() => {
+          onSubmit(nextVal);
+        }, 120);
       }
     }
   };

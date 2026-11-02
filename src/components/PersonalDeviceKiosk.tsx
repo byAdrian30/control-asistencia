@@ -80,7 +80,7 @@ export default function PersonalDeviceKiosk({
   // 1. Validar que el dispositivo físico coincida con el registrado para este colaborador
   const isDeviceValid = employee.registered_device_id === currentDeviceId;
 
-  const handleExecutePunch = async () => {
+  const handleExecutePunch = async (overridePin?: string) => {
     setErrorMsg(null);
     setGpsError(null);
 
@@ -94,8 +94,10 @@ export default function PersonalDeviceKiosk({
       return;
     }
 
+    const pinToVerify = overridePin ?? pin;
+
     // VALIDACIÓN DE PIN
-    if (employee.code && pin !== employee.code) {
+    if (employee.code && pinToVerify !== employee.code) {
       playSound('error');
       triggerVibration([100, 100, 100]);
       setErrorMsg('PIN incorrecto. Ingresa el código asignado a tu cuenta en este celular.');
@@ -407,7 +409,7 @@ export default function PersonalDeviceKiosk({
             <PinPad
               value={pin}
               onChange={setPin}
-              onSubmit={pin.length === 4 ? handleExecutePunch : undefined}
+              onSubmit={handleExecutePunch}
             />
           </div>
 
@@ -415,7 +417,7 @@ export default function PersonalDeviceKiosk({
           <div className="pt-2">
             <button
               type="button"
-              onClick={handleExecutePunch}
+              onClick={() => handleExecutePunch()}
               disabled={isSubmitting || pin.length < 4}
               className={`w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2.5 shadow-xl transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed ${
                 targetAction === 'in'

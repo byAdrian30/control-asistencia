@@ -729,9 +729,7 @@ export default function AttendanceHomePage() {
               schedules={schedules}
               onPunch={handlePunch}
               onRegisterPin={async (empId, newPin) => {
-                const emp = employees.find((e) => e.id === empId);
-                if (emp) handleSelectEmployeeForBinding(emp);
-                return true;
+                return await handleBindDeviceSuccess(empId, newPin);
               }}
             />
           </section>
