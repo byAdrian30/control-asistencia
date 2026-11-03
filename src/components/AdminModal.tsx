@@ -25,10 +25,14 @@ import {
   ShieldCheck,
   ShieldAlert,
   Navigation,
+  Clock,
+  Edit3,
+  Search,
 } from 'lucide-react';
 import { Employee, Schedule, SystemConfig, Attendance } from '@/types/database';
 import PinPad from './PinPad';
 import { getCurrentPosition } from '@/lib/geo';
+import { getPeruDateTime, formatPeruTime, calculateMinutesLate } from '@/lib/late-calculator';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -44,6 +48,8 @@ interface AdminModalProps {
   onTriggerAutoCheckout: () => Promise<string>;
   onTriggerTelegramReport: () => Promise<string>;
   isSupabaseConnected: boolean;
+  onUpdateAttendance?: (updated: Attendance) => Promise<void> | void;
+  onDeleteAttendance?: (id: string) => Promise<void> | void;
 }
 
 const DAYS_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -53,6 +59,7 @@ export default function AdminModal({
   onClose,
   employees,
   schedules,
+  attendances = [],
   config,
   onSaveEmployee,
   onDeleteEmployee,
@@ -61,6 +68,8 @@ export default function AdminModal({
   onTriggerAutoCheckout,
   onTriggerTelegramReport,
   isSupabaseConnected,
+  onUpdateAttendance,
+  onDeleteAttendance,
 }: AdminModalProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [adminPinInput, setAdminPinInput] = useState('');
@@ -68,8 +77,30 @@ export default function AdminModal({
 
   // Tabs
   const [activeTab, setActiveTab] = useState<
-    'links' | 'geofence' | 'employees' | 'schedules' | 'telegram' | 'autoclose' | 'supabase'
+    'links' | 'attendance' | 'geofence' | 'employees' | 'schedules' | 'telegram' | 'autoclose' | 'supabase'
   >('links');
+
+  // Estados para Edición y Control de Horas de Ingreso
+  const todayPeruStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+  const [selectedAttendanceDate, setSelectedAttendanceDate] = useState<string>(todayPeruStr);
+  const [attendanceAreaFilter, setAttendanceAreaFilter] = useState<'Todos' | 'Cocina' | 'Salón'>('Todos');
+  const [attendanceSearch, setAttendanceSearch] = useState<string>('');
+
+  // Edición de marcación existente
+  const [editingAttendance, setEditingAttendance] = useState<Attendance | null>(null);
+  const [editClockInTime, setEditClockInTime] = useState<string>('11:00');
+  const [editClockOutTime, setEditClockOutTime] = useState<string>('');
+  const [editNotes, setEditNotes] = useState<string>('');
+  const [attendanceSaveStatus, setAttendanceSaveStatus] = useState<string | null>(null);
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false);
+
+  // Creación de marcación manual
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [manualEmpId, setManualEmpId] = useState<string>(employees[0]?.id || '');
+  const [manualDate, setManualDate] = useState<string>(todayPeruStr);
+  const [manualClockIn, setManualClockIn] = useState<string>('11:00');
+  const [manualClockOut, setManualClockOut] = useState<string>('');
+  const [manualNotes, setManualNotes] = useState<string>('Marcación manual autorizada por administración');
 
   // Formulario nuevo empleado
   const [newEmpName, setNewEmpName] = useState('');
@@ -363,6 +394,158 @@ export default function AdminModal({
     }
   };
 
+  // Filtrar marcaciones por fecha, área y texto de búsqueda
+  const filteredDayAttendances = attendances
+    .filter((a) => {
+      if (!a.clock_in) return false;
+      const attDate = new Date(a.clock_in).toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+      return attDate === selectedAttendanceDate;
+    })
+    .filter((a) => {
+      if (attendanceAreaFilter === 'Todos') return true;
+      const emp = employees.find((e) => e.id === a.employee_id);
+      return emp?.area === attendanceAreaFilter;
+    })
+    .filter((a) => {
+      if (!attendanceSearch) return true;
+      const emp = employees.find((e) => e.id === a.employee_id);
+      const q = attendanceSearch.toLowerCase();
+      return (
+        (emp?.name && emp.name.toLowerCase().includes(q)) ||
+        (emp?.role && emp.role.toLowerCase().includes(q)) ||
+        (a.notes && a.notes.toLowerCase().includes(q))
+      );
+    })
+    .sort((a, b) => new Date(b.clock_in).getTime() - new Date(a.clock_in).getTime());
+
+  const handleStartEditAttendance = (att: Attendance) => {
+    setEditingAttendance(att);
+    const inPeru = getPeruDateTime(att.clock_in);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    setEditClockInTime(`${pad(inPeru.hours)}:${pad(inPeru.minutes)}`);
+    if (att.clock_out) {
+      const outPeru = getPeruDateTime(att.clock_out);
+      setEditClockOutTime(`${pad(outPeru.hours)}:${pad(outPeru.minutes)}`);
+    } else {
+      setEditClockOutTime('');
+    }
+    setEditNotes(att.notes || '');
+  };
+
+  const handleSaveEditedAttendance = async () => {
+    if (!editingAttendance || !editClockInTime) return;
+    setIsSavingAttendance(true);
+    setAttendanceSaveStatus('Guardando cambios en la marcación...');
+    try {
+      const origPeru = getPeruDateTime(editingAttendance.clock_in);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const dateStr = `${origPeru.year}-${pad(origPeru.month)}-${pad(origPeru.day)}`;
+
+      const [inH, inM] = editClockInTime.split(':').map(Number);
+      const newClockInIso = new Date(`${dateStr}T${pad(inH)}:${pad(inM)}:00-05:00`).toISOString();
+
+      let newClockOutIso: string | null = null;
+      if (editClockOutTime) {
+        const [outH, outM] = editClockOutTime.split(':').map(Number);
+        newClockOutIso = new Date(`${dateStr}T${pad(outH)}:${pad(outM)}:00-05:00`).toISOString();
+      }
+
+      const empSchedule = schedules.find(
+        (s) => s.employee_id === editingAttendance.employee_id && s.day_of_week === origPeru.dayOfWeek && s.is_active
+      );
+      const lateCalc = calculateMinutesLate(newClockInIso, empSchedule);
+
+      const updatedRecord: Attendance = {
+        ...editingAttendance,
+        clock_in: newClockInIso,
+        clock_out: newClockOutIso,
+        minutes_late: lateCalc.minutesLate,
+        notes: editNotes ? `${editNotes} (Ajuste Admin)` : 'Hora modificada por administración',
+      };
+
+      if (onUpdateAttendance) {
+        await onUpdateAttendance(updatedRecord);
+      }
+
+      setAttendanceSaveStatus('✅ ¡Hora de ingreso modificada con éxito!');
+      setTimeout(() => {
+        setEditingAttendance(null);
+        setAttendanceSaveStatus(null);
+      }, 1200);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setAttendanceSaveStatus(`❌ Error al guardar: ${msg}`);
+    } finally {
+      setIsSavingAttendance(false);
+    }
+  };
+
+  const handleCreateManualAttendance = async () => {
+    if (!manualEmpId || !manualDate || !manualClockIn) return;
+    setIsSavingAttendance(true);
+    setAttendanceSaveStatus('Registrando marcación manual...');
+    try {
+      const [inH, inM] = manualClockIn.split(':').map(Number);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const clockInIso = new Date(`${manualDate}T${pad(inH)}:${pad(inM)}:00-05:00`).toISOString();
+
+      let clockOutIso: string | null = null;
+      if (manualClockOut) {
+        const [outH, outM] = manualClockOut.split(':').map(Number);
+        clockOutIso = new Date(`${manualDate}T${pad(outH)}:${pad(outM)}:00-05:00`).toISOString();
+      }
+
+      const peruDate = getPeruDateTime(clockInIso);
+      const empSchedule = schedules.find(
+        (s) => s.employee_id === manualEmpId && s.day_of_week === peruDate.dayOfWeek && s.is_active
+      );
+      const lateCalc = calculateMinutesLate(clockInIso, empSchedule);
+      const targetEmp = employees.find((e) => e.id === manualEmpId);
+
+      const newRecord: Attendance = {
+        id: `att-${Date.now()}`,
+        employee_id: manualEmpId,
+        clock_in: clockInIso,
+        clock_out: clockOutIso,
+        auto_closed: false,
+        minutes_late: lateCalc.minutesLate,
+        notes: manualNotes || 'Marcación manual autorizada por administración',
+        clock_in_lat: null,
+        clock_in_lng: null,
+        clock_in_distance_meters: null,
+        clock_out_lat: null,
+        clock_out_lng: null,
+        device_id: targetEmp?.registered_device_id || 'dev-admin-manual',
+        device_name: 'Panel Admin',
+        verified_by_gps: true,
+        verified_by_device: true,
+        verified_by_biometrics: true,
+      };
+
+      if (onUpdateAttendance) {
+        await onUpdateAttendance(newRecord);
+      }
+
+      setAttendanceSaveStatus('✅ ¡Marcación manual creada con éxito!');
+      setTimeout(() => {
+        setIsManualModalOpen(false);
+        setAttendanceSaveStatus(null);
+      }, 1200);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setAttendanceSaveStatus(`❌ Error al crear marcación: ${msg}`);
+    } finally {
+      setIsSavingAttendance(false);
+    }
+  };
+
+  const handleDeleteAttendanceRecord = async (attId: string) => {
+    if (!confirm('¿Seguro que deseas eliminar esta marcación de asistencia?')) return;
+    if (onDeleteAttendance) {
+      await onDeleteAttendance(attId);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
       <div className="bg-slate-900 border border-slate-800 w-full max-w-3xl rounded-3xl p-4 sm:p-6 text-white shadow-2xl relative max-h-[94vh] flex flex-col">
@@ -429,6 +612,19 @@ export default function AdminModal({
               >
                 <Smartphone className="w-3.5 h-3.5" />
                 Links Personales ({employees.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('attendance')}
+                className={`px-3 py-2 rounded-xl flex items-center gap-1.5 shrink-0 transition-all ${
+                  activeTab === 'attendance'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md font-bold'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                Modificar Horas / Marcaciones
               </button>
 
               <button
@@ -512,6 +708,195 @@ export default function AdminModal({
 
             {/* CONTENIDO DE PESTAÑAS */}
             <div className="flex-1 overflow-y-auto pr-1 text-xs">
+              {/* TAB 0: MODIFICAR HORA DE INGRESO Y ASISTENCIAS */}
+              {activeTab === 'attendance' && (
+                <div className="space-y-4">
+                  {/* Barra superior de control y filtros */}
+                  <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <Clock className="w-4 h-4 text-emerald-400" />
+                          Modificar Hora de Ingreso / Salida del Personal
+                        </h3>
+                        <p className="text-[11px] text-slate-400">
+                          Selecciona la fecha para revisar y corregir la hora exacta a la que ingresó cada persona.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualDate(selectedAttendanceDate);
+                          setManualEmpId(employees[0]?.id || '');
+                          setManualClockIn('11:00');
+                          setManualClockOut('');
+                          setIsManualModalOpen(true);
+                        }}
+                        className="px-3 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Registrar Marcación Manual
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-800/80">
+                      {/* Selector de fecha */}
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1 font-medium">Fecha de Marcaciones:</label>
+                        <input
+                          type="date"
+                          value={selectedAttendanceDate}
+                          onChange={(e) => setSelectedAttendanceDate(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      {/* Filtro de Área */}
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1 font-medium">Área:</label>
+                        <div className="flex rounded-xl bg-slate-900 border border-slate-800 p-0.5">
+                          {(['Todos', 'Cocina', 'Salón'] as const).map((area) => (
+                            <button
+                              key={area}
+                              type="button"
+                              onClick={() => setAttendanceAreaFilter(area)}
+                              className={`flex-1 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                                attendanceAreaFilter === area
+                                  ? 'bg-emerald-500 text-slate-950'
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {area}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Buscador de Colaborador */}
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-1 font-medium">Buscar Colaborador:</label>
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Nombre del personal..."
+                            value={attendanceSearch}
+                            onChange={(e) => setAttendanceSearch(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-8 pr-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Estado de guardado / alerta */}
+                  {attendanceSaveStatus && (
+                    <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-semibold">
+                      {attendanceSaveStatus}
+                    </div>
+                  )}
+
+                  {/* Lista de Marcaciones del día seleccionado */}
+                  <div className="space-y-2">
+                    {filteredDayAttendances.length === 0 ? (
+                      <div className="text-center py-8 p-4 rounded-2xl bg-slate-950/60 border border-slate-800 text-slate-400 text-xs">
+                        No hay marcaciones registradas para el día {selectedAttendanceDate}.
+                      </div>
+                    ) : (
+                      filteredDayAttendances.map((att) => {
+                        const emp = employees.find((e) => e.id === att.employee_id);
+                        const inTime = formatPeruTime(att.clock_in);
+                        const outTime = att.clock_out ? formatPeruTime(att.clock_out) : null;
+                        const isWorking = !att.clock_out;
+
+                        return (
+                          <div
+                            key={att.id}
+                            className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-slate-700 transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-white text-xs shrink-0"
+                                style={{ backgroundColor: emp?.avatar_color || '#3b82f6' }}
+                              >
+                                {emp?.name
+                                  ? emp.name
+                                      .split(' ')
+                                      .map((n) => n[0])
+                                      .slice(0, 2)
+                                      .join('')
+                                  : '??'}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="font-bold text-white text-xs truncate">
+                                    {emp?.name || att.employee_id}
+                                  </p>
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                    {emp?.area || 'Personal'}
+                                  </span>
+                                  {isWorking ? (
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">
+                                      🟢 En Tienda
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                                      Finalizado
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5 flex-wrap">
+                                  <span>
+                                    Entrada: <strong className="text-emerald-400 font-mono">{inTime}</strong>
+                                  </span>
+                                  <span>•</span>
+                                  <span>
+                                    Salida:{' '}
+                                    <strong className="text-rose-400 font-mono">
+                                      {outTime || 'No registrada'}
+                                    </strong>
+                                  </span>
+                                  {att.minutes_late && att.minutes_late > 0 ? (
+                                    <span className="text-amber-400 font-semibold text-[10px] bg-amber-400/10 px-1.5 py-0.5 rounded">
+                                      +{att.minutes_late}m tardanza
+                                    </span>
+                                  ) : (
+                                    <span className="text-emerald-400/80 text-[10px]">Puntual</span>
+                                  )}
+                                </div>
+                                {att.notes && (
+                                  <p className="text-[10px] text-slate-500 italic truncate max-w-sm mt-0.5">
+                                    {att.notes}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditAttendance(att)}
+                                className="px-3 py-1.5 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 text-xs font-bold flex items-center gap-1 transition-colors"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" /> Modificar Hora
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAttendanceRecord(att.id)}
+                                className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-700 transition-colors"
+                                title="Eliminar Marcación"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* TAB 1: LINKS PERSONALES Y CELULARES VINCULADOS */}
               {activeTab === 'links' && (
                 <div className="space-y-3">
@@ -1169,12 +1554,206 @@ export default function AdminModal({
                         </button>
                       </div>
                       <p className="text-[10px] text-slate-400 leading-normal">
-                        Si deseas duplicar directamente en tu instancia de Supabase (URL: <code className="text-emerald-400">https://wmyxzvlfhxhwwfwtqgqe.supabase.co</code>), solo ingresa tu clave anónima en Vercel.
+                        Instancia conectada a Supabase (ID: <code className="text-emerald-400">bhcprcljiervabeqoouz</code>), 100% sincronizado con Vercel.
                       </p>
                     </div>
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* MODAL / OVERLAY PARA EDITAR HORA DE INGRESO Y SALIDA */}
+        {editingAttendance && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm animate-fade-in">
+            <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-5 max-w-sm w-full text-white shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <h4 className="font-bold text-sm text-white flex items-center gap-1.5">
+                  <Edit3 className="w-4 h-4 text-emerald-400" />
+                  Modificar Horario de Marcación
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setEditingAttendance(null)}
+                  className="p-1 rounded-full text-slate-400 hover:text-white bg-slate-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Datos del colaborador */}
+              <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Colaborador:</p>
+                <p className="text-sm font-black text-white mt-0.5">
+                  {employees.find((e) => e.id === editingAttendance.employee_id)?.name || editingAttendance.employee_id}
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  {employees.find((e) => e.id === editingAttendance.employee_id)?.role} • {employees.find((e) => e.id === editingAttendance.employee_id)?.area}
+                </p>
+              </div>
+
+              {/* Input Hora de Ingreso */}
+              <div>
+                <label className="text-xs text-emerald-300 font-bold block mb-1">
+                  Hora de Ingreso (Entrada):
+                </label>
+                <input
+                  type="time"
+                  value={editClockInTime}
+                  onChange={(e) => setEditClockInTime(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-base font-mono font-bold text-white focus:outline-none focus:border-emerald-500"
+                  required
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Al guardar, se recalculará automáticamente la tardanza respecto a su horario programado.
+                </p>
+              </div>
+
+              {/* Input Hora de Salida */}
+              <div>
+                <label className="text-xs text-rose-300 font-bold block mb-1">
+                  Hora de Salida (Opcional):
+                </label>
+                <input
+                  type="time"
+                  value={editClockOutTime}
+                  onChange={(e) => setEditClockOutTime(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-base font-mono font-bold text-white focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Déjalo vacío si el colaborador aún está trabajando en tienda.
+                </p>
+              </div>
+
+              {/* Input Notas */}
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">
+                  Motivo / Nota de ajuste:
+                </label>
+                <input
+                  type="text"
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Ej: Corrección autorizada por supervisión"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingAttendance(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEditedAttendance}
+                  disabled={isSavingAttendance || !editClockInTime}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition-colors disabled:opacity-40 shadow-md"
+                >
+                  {isSavingAttendance ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL PARA NUEVA MARCACIÓN MANUAL */}
+        {isManualModalOpen && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-black/80 backdrop-blur-sm animate-fade-in">
+            <div className="bg-slate-900 border border-slate-700/80 rounded-3xl p-5 max-w-sm w-full text-white shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <h4 className="font-bold text-sm text-white flex items-center gap-1.5">
+                  <Plus className="w-4 h-4 text-emerald-400" />
+                  Registrar Marcación Manual
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setIsManualModalOpen(false)}
+                  className="p-1 rounded-full text-slate-400 hover:text-white bg-slate-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Colaborador:</label>
+                <select
+                  value={manualEmpId}
+                  onChange={(e) => setManualEmpId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  {employees.filter((e) => e.active).map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.area} - {emp.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Fecha de la marcación:</label>
+                <input
+                  type="date"
+                  value={manualDate}
+                  onChange={(e) => setManualDate(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-emerald-300 font-bold block mb-1">Ingreso:</label>
+                  <input
+                    type="time"
+                    value={manualClockIn}
+                    onChange={(e) => setManualClockIn(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-rose-300 font-bold block mb-1">Salida (opc):</label>
+                  <input
+                    type="time"
+                    value={manualClockOut}
+                    onChange={(e) => setManualClockOut(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Notas:</label>
+                <input
+                  type="text"
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                  placeholder="Motivo de la marcación manual"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsManualModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateManualAttendance}
+                  disabled={isSavingAttendance || !manualClockIn}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition-colors disabled:opacity-40 shadow-md"
+                >
+                  {isSavingAttendance ? 'Creando...' : 'Crear Marcación'}
+                </button>
+              </div>
             </div>
           </div>
         )}

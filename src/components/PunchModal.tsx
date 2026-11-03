@@ -7,6 +7,7 @@ import { Employee, Attendance, Schedule } from '@/types/database';
 import PinPad from './PinPad';
 import { playSound, triggerVibration } from '@/lib/sound';
 import { calculateMinutesLate, formatHoursWorked } from '@/lib/late-calculator';
+import { setStoredBoundEmployeeId } from '@/lib/device';
 
 interface PunchModalProps {
   employee: Employee;
@@ -135,6 +136,7 @@ export default function PunchModal({
       });
 
       if (ok) {
+        setStoredBoundEmployeeId(employee.id);
         if (targetAction === 'in') {
           playSound('in');
           triggerVibration([100, 50, 150]);

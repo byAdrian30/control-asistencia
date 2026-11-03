@@ -31,7 +31,7 @@ import {
   saveLocalConfig,
 } from '@/lib/mock-storage';
 import { getCurrentPosition, calculateDistanceMeters, formatDistance } from '@/lib/geo';
-import { getOrCreateDeviceId, getDeviceDescription } from '@/lib/device';
+import { getOrCreateDeviceId, getDeviceDescription, setStoredBoundEmployeeId } from '@/lib/device';
 import { playSound, triggerVibration } from '@/lib/sound';
 import {
   calculateMinutesLate,
@@ -101,6 +101,7 @@ function PersonalPunchContent({ params }: PageProps) {
     setEmployee(target || null);
 
     if (target) {
+      setStoredBoundEmployeeId(target.id);
       if (target.registered_device_id && target.registered_device_id !== devId) {
         setDeviceMismatch(true);
       } else {
@@ -134,6 +135,7 @@ function PersonalPunchContent({ params }: PageProps) {
             );
             if (updatedTarget) {
               setEmployee(updatedTarget);
+              setStoredBoundEmployeeId(updatedTarget.id);
               if (updatedTarget.registered_device_id && updatedTarget.registered_device_id !== devId) {
                 setDeviceMismatch(true);
               } else {
@@ -256,6 +258,52 @@ function PersonalPunchContent({ params }: PageProps) {
       confetti({ particleCount: 70, spread: 60, origin: { y: 0.5 } });
     } catch {
       setActionError('Error vinculando el teléfono. Intenta nuevamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Re-autorizar nuevo dispositivo validando el PIN personal del colaborador
+  const handleAuthorizeNewDevice = async () => {
+    if (!employee) return;
+    if (employee.code && pin !== employee.code) {
+      playSound('error');
+      triggerVibration([100, 100, 100]);
+      setActionError('PIN de seguridad incorrecto.');
+      setPin('');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      const updatedEmp: Employee = {
+        ...employee,
+        registered_device_id: currentDeviceId,
+        registered_device_name: currentDeviceDesc,
+        registered_device_at: new Date().toISOString(),
+      };
+
+      const emps = getLocalEmployees();
+      const updatedList = emps.map((e) => (e.id === employee.id ? updatedEmp : e));
+      saveLocalEmployees(updatedList);
+      setEmployee(updatedEmp);
+      setStoredBoundEmployeeId(employee.id);
+      setDeviceMismatch(false);
+
+      // Sincronizar en la nube
+      fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employees: updatedList }),
+      }).catch(() => {});
+
+      playSound('in');
+      triggerVibration([100, 50, 150]);
+      confetti({ particleCount: 70, spread: 60, origin: { y: 0.5 } });
+      setPin('');
+    } catch {
+      setActionError('Error al actualizar celular predeterminado. Intenta de nuevo.');
     } finally {
       setIsSubmitting(false);
     }
@@ -462,22 +510,45 @@ function PersonalPunchContent({ params }: PageProps) {
 
       {/* Contenedor Principal (Mobile) */}
       <main className="flex-1 max-w-md w-full mx-auto p-4 flex flex-col justify-center pb-10">
-        {/* CASO A: DISPOSITIVO NO AUTORIZADO (INTENTO DE SUPLANTACIÓN) */}
+        {/* CASO A: ACTUALIZAR Y AUTORIZAR CELULAR CON PIN */}
         {deviceMismatch && (
-          <div className="p-5 rounded-3xl bg-rose-500/10 border border-rose-500/30 text-center animate-fade-in">
-            <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center">
-              <ShieldAlert className="w-8 h-8" />
+          <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 text-center animate-fade-in shadow-xl">
+            <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center justify-center">
+              <Smartphone className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-black text-white">Dispositivo No Autorizado</h3>
-            <p className="text-xs text-rose-200 mt-2 leading-relaxed">
-              Este enlace pertenece exclusivamente a <strong>{employee.name}</strong> y solo puede ser usado desde su teléfono celular registrado:
+            <h3 className="text-lg font-black text-white">{employee.name}</h3>
+            <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+              Detectamos que estás ingresando desde un nuevo equipo o navegador:
             </p>
-            <div className="my-3 p-3 rounded-2xl bg-slate-900 border border-slate-800 text-xs font-mono text-emerald-400 font-bold">
-              📱 {employee.registered_device_name || 'Celular Autorizado'}
+            <div className="my-2.5 p-2.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-400 font-bold">
+              📱 {currentDeviceDesc}
             </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Para evitar que terceros marquen por ti, el sistema bloquea otros equipos. Si compraste un celular nuevo o perdiste el anterior, solicita a tu supervisor que desvincule tu equipo en el Panel de Administración.
+            <p className="text-xs text-slate-400 mb-3">
+              Ingresa tu PIN personal de 4 dígitos para autorizar y establecer este celular como tu equipo predeterminado:
             </p>
+
+            {actionError && (
+              <div className="mb-3 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-medium">
+                {actionError}
+              </div>
+            )}
+
+            <div className="my-3 flex justify-center">
+              <PinPad
+                value={pin}
+                onChange={setPin}
+                onSubmit={() => handleAuthorizeNewDevice()}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => handleAuthorizeNewDevice()}
+              disabled={isSubmitting || pin.length < 4}
+              className="mt-2 w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 text-slate-950 font-black text-xs sm:text-sm rounded-xl transition-all disabled:opacity-40 shadow-lg shadow-emerald-500/20"
+            >
+              {isSubmitting ? 'Actualizando equipo...' : 'Actualizar este Celular como Predeterminado'}
+            </button>
           </div>
         )}
 

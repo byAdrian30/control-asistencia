@@ -48,6 +48,7 @@ export default function AttendanceHomePage() {
   // Modal para vincular equipo por primera vez
   const [bindingCandidate, setBindingCandidate] = useState<Employee | null>(null);
   const [bindingError, setBindingError] = useState<string | null>(null);
+  const [isMobileScreen, setIsMobileScreen] = useState(false);
 
   const isConnected = isSupabaseConfigured();
 
@@ -211,9 +212,20 @@ export default function AttendanceHomePage() {
     setDeviceDesc(curDevDesc);
 
     const storedBoundId = getStoredBoundEmployeeId();
-    const matched = loadedEmps.find(
+    let matched = loadedEmps.find(
       (e) => (storedBoundId && e.id === storedBoundId) || (e.registered_device_id && e.registered_device_id === curDevId)
     );
+
+    // Fallback inteligente: Si este equipo ya marcó asistencia hoy, asociarlo automáticamente
+    if (!matched) {
+      const todayAtt = loadedAtts.find((a) => a.device_id === curDevId);
+      if (todayAtt) {
+        matched = loadedEmps.find((e) => e.id === todayAtt.employee_id);
+        if (matched) {
+          setStoredBoundEmployeeId(matched.id);
+        }
+      }
+    }
 
     setBoundEmployee(matched || null);
     setIsRefreshing(false);
@@ -221,6 +233,11 @@ export default function AttendanceHomePage() {
 
   useEffect(() => {
     setIsMounted(true);
+    const checkMobile = () => {
+      setIsMobileScreen(window.innerWidth < 768 || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
     loadData();
 
     // Auto-sincronización en vivo cada 8 segundos con la nube central
@@ -228,8 +245,16 @@ export default function AttendanceHomePage() {
       loadData();
     }, 8000);
 
-    return () => clearInterval(interval);
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      clearInterval(interval);
+    };
   }, [loadData]);
+
+  const handleQuickSelectEmployee = (emp: Employee) => {
+    setBoundEmployee(emp);
+    setStoredBoundEmployeeId(emp.id);
+  };
 
   // VINCULAR CELULAR POR PRIMERA VEZ (1 SOLO LINK PARA TODOS)
   const handleBindDeviceSuccess = async (employeeId: string, newPin: string): Promise<boolean> => {
@@ -351,6 +376,46 @@ export default function AttendanceHomePage() {
         setAttendances(updated);
         saveLocalAttendance(updated);
 
+        // Guardar este dispositivo como terminal personal del colaborador
+        setStoredBoundEmployeeId(payload.employeeId);
+
+        // Vincular automáticamente el dispositivo si aún no estaba enlazado
+        const empToUpdate = employees.find((e) => e.id === payload.employeeId);
+        if (empToUpdate && empToUpdate.registered_device_id !== deviceId) {
+          const updatedEmps = employees.map((e) =>
+            e.id === payload.employeeId
+              ? {
+                  ...e,
+                  registered_device_id: deviceId,
+                  registered_device_name: deviceDesc,
+                  registered_device_at: nowIso,
+                }
+              : e
+          );
+          setEmployees(updatedEmps);
+          saveLocalEmployees(updatedEmps);
+          fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ employees: updatedEmps }),
+          }).catch(() => {});
+
+          if (isConnected && supabase) {
+            (async () => {
+              try {
+                await supabase
+                  .from('employees')
+                  .update({
+                    registered_device_id: deviceId,
+                    registered_device_name: deviceDesc,
+                    registered_device_at: nowIso,
+                  })
+                  .eq('id', payload.employeeId);
+              } catch {}
+            })();
+          }
+        }
+
         // 2. Notificación y guardado en API central (Telegram + Gist + Supabase)
         fetch('/api/attendance', {
           method: 'POST',
@@ -440,6 +505,69 @@ export default function AttendanceHomePage() {
     } catch (err) {
       console.error('Error procesando marcación:', err);
       return true;
+    }
+  };
+
+  // Actualizar marcación (hora de ingreso / salida / notas / tardanza) desde el Panel Admin
+  const handleUpdateAttendance = async (updatedAtt: Attendance) => {
+    let updated = attendances.map((a) => (a.id === updatedAtt.id ? updatedAtt : a));
+    if (!attendances.some((a) => a.id === updatedAtt.id)) {
+      updated = [updatedAtt, ...attendances];
+    }
+    setAttendances(updated);
+    saveLocalAttendance(updated);
+
+    // 1. Sincronizar en Gist central
+    fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attendances: updated }),
+    }).catch(() => {});
+
+    // 2. Persistir en Supabase
+    if (isConnected && supabase) {
+      try {
+        await supabase.from('attendance').upsert(
+          {
+            id: updatedAtt.id,
+            employee_id: updatedAtt.employee_id,
+            clock_in: updatedAtt.clock_in,
+            clock_out: updatedAtt.clock_out || null,
+            auto_closed: updatedAtt.auto_closed || false,
+            minutes_late: updatedAtt.minutes_late || 0,
+            notes: updatedAtt.notes || null,
+            device_id: updatedAtt.device_id || null,
+            device_name: updatedAtt.device_name || null,
+            verified_by_gps: updatedAtt.verified_by_gps !== false,
+            verified_by_device: updatedAtt.verified_by_device !== false,
+            verified_by_biometrics: !!updatedAtt.verified_by_biometrics,
+          },
+          { onConflict: 'id' }
+        );
+      } catch (err) {
+        console.error('Error al actualizar marcación en Supabase:', err);
+      }
+    }
+  };
+
+  // Eliminar marcación (en caso de registro erróneo o accidental)
+  const handleDeleteAttendance = async (attendanceId: string) => {
+    const updated = attendances.filter((a) => a.id !== attendanceId);
+    setAttendances(updated);
+    saveLocalAttendance(updated);
+
+    fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attendances: updated }),
+    }).catch(() => {});
+
+    if (isConnected && supabase) {
+      try {
+        await supabase.from('attendance').delete().eq('id', attendanceId);
+      } catch (err) {
+        console.error('Error al eliminar marcación en Supabase:', err);
+      }
     }
   };
 
@@ -673,6 +801,8 @@ export default function AttendanceHomePage() {
           onSaveConfig={handleSaveConfig}
           onTriggerAutoCheckout={handleTriggerAutoCheckout}
           onTriggerTelegramReport={handleTriggerTelegramReport}
+          onUpdateAttendance={handleUpdateAttendance}
+          onDeleteAttendance={handleDeleteAttendance}
           isSupabaseConnected={isConnected}
         />
       </div>
@@ -694,101 +824,158 @@ export default function AttendanceHomePage() {
         totalCount={employees.length}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-5 lg:p-6 pb-12">
-        {/* Banner retirado de la pantalla principal y trasladado a Configuración */}
+      {/* EN MÓVIL: SELECTOR RÁPIDO PARA IR DIRECTO A SU TECLADO PIN */}
+      {isMobileScreen && !forceGeneralMode ? (
+        <main className="flex-1 max-w-md w-full mx-auto p-4 flex flex-col justify-center pb-12 animate-fade-in">
+          <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl text-center">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <Smartphone className="w-7 h-7" />
+            </div>
+            <h2 className="text-lg font-black text-white">Marcación Personal</h2>
+            <p className="text-xs text-slate-400 mt-1 mb-4">
+              Selecciona tu nombre para ingresar tu contraseña de 4 dígitos:
+            </p>
 
-        {/* Si el usuario cambió a modo general y quiere volver a su celular personal */}
-        {boundEmployee && forceGeneralMode && (
-          <div className="max-w-md mx-auto mb-4 p-3 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-            <span className="text-xs text-slate-300">
-              Estás en Modo General. Tu cuenta: <strong>{boundEmployee.name.split(' ')[0]}</strong>
-            </span>
-            <button
-              onClick={handleReturnToPersonalPhone}
-              className="px-3 py-1 bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl"
-            >
-              Volver a mi Celular
-            </button>
-          </div>
-        )}
+            <div className="space-y-2 max-h-[58vh] overflow-y-auto pr-1">
+              {employees
+                .filter((e) => e.active)
+                .map((emp) => (
+                  <button
+                    key={emp.id}
+                    onClick={() => handleQuickSelectEmployee(emp)}
+                    className="w-full p-3 rounded-2xl bg-slate-950 hover:bg-slate-800/90 border border-slate-800/90 hover:border-emerald-500/40 flex items-center gap-3 transition-all active:scale-[0.98] text-left group shadow-sm"
+                  >
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-sm"
+                      style={{ backgroundColor: emp.avatar_color || '#3b82f6' }}
+                    >
+                      {emp.name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .slice(0, 2)
+                        .join('')}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors truncate">
+                        {emp.name}
+                      </p>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        {emp.role} • <span className="text-slate-300">{emp.area}</span>
+                      </p>
+                    </div>
+                    <div className="px-2 py-1 bg-slate-900 group-hover:bg-emerald-500 group-hover:text-slate-950 rounded-lg text-[10px] text-emerald-400 font-bold border border-slate-800 shrink-0 transition-colors">
+                      Marcar PIN ›
+                    </div>
+                  </button>
+                ))}
+            </div>
 
-        {/* Mensaje de error de vinculación si otro intentó marcar */}
-        {bindingError && (
-          <div className="max-w-md mx-auto mb-4 p-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-2.5 shadow-lg">
-            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold text-white mb-0.5">Dispositivo no permitido</p>
-              <p className="leading-relaxed">{bindingError}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Panel Superior de Estadísticas (Desktop) */}
-        <div className="hidden lg:grid grid-cols-4 gap-4 mb-6">
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">Personal Registrado</p>
-              <p className="text-2xl font-black text-white">{employees.length}</p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
-              <Users className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">En Tienda Ahora</p>
-              <p className="text-2xl font-black text-emerald-400">{workingNowCount}</p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-              <Clock className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">Jornadas Terminadas</p>
-              <p className="text-2xl font-black text-slate-200">{completedCount}</p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5" />
+            <div className="mt-4 pt-3 border-t border-slate-800 text-center">
+              <button
+                type="button"
+                onClick={() => setForceGeneralMode(true)}
+                className="text-[11px] text-slate-400 hover:text-white flex items-center justify-center gap-1.5 mx-auto transition-colors"
+              >
+                <Monitor className="w-3.5 h-3.5" /> Ver Quiosco General de Tienda
+              </button>
             </div>
           </div>
-
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">Tardanzas Detectadas</p>
-              <p className={`text-2xl font-black ${lateCount > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
-                {lateCount}
-              </p>
+        </main>
+      ) : (
+        <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-5 lg:p-6 pb-12">
+          {/* Si el usuario cambió a modo general y quiere volver a su celular personal */}
+          {boundEmployee && forceGeneralMode && (
+            <div className="max-w-md mx-auto mb-4 p-3 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+              <span className="text-xs text-slate-300">
+                Estás en Modo General. Tu cuenta: <strong>{boundEmployee.name.split(' ')[0]}</strong>
+              </span>
+              <button
+                onClick={handleReturnToPersonalPhone}
+                className="px-3 py-1 bg-emerald-500 text-slate-950 font-bold text-xs rounded-xl"
+              >
+                Volver a mi Celular
+              </button>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5" />
+          )}
+
+          {/* Mensaje de error de vinculación si otro intentó marcar */}
+          {bindingError && (
+            <div className="max-w-md mx-auto mb-4 p-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-2.5 shadow-lg">
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-white mb-0.5">Dispositivo no permitido</p>
+                <p className="leading-relaxed">{bindingError}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Panel Superior de Estadísticas (Desktop) */}
+          <div className="hidden lg:grid grid-cols-4 gap-4 mb-6">
+            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
+              <div>
+                <p className="text-xs text-slate-400 font-medium">Personal Registrado</p>
+                <p className="text-2xl font-black text-white">{employees.length}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
+                <Users className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
+              <div>
+                <p className="text-xs text-slate-400 font-medium">En Tienda Ahora</p>
+                <p className="text-2xl font-black text-emerald-400">{workingNowCount}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                <Clock className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
+              <div>
+                <p className="text-xs text-slate-400 font-medium">Jornadas Terminadas</p>
+                <p className="text-2xl font-black text-slate-200">{completedCount}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow-sm">
+              <div>
+                <p className="text-xs text-slate-400 font-medium">Tardanzas Detectadas</p>
+                <p className={`text-2xl font-black ${lateCount > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                  {lateCount}
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Layout en 2 columnas (PC) o vertical (Móvil) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
-          <section className="lg:col-span-8 w-full" aria-label="Terminal de Marcación">
-            <KioskMode
-              employees={employees}
-              attendances={attendances}
-              schedules={schedules}
-              onPunch={handlePunch}
-              onRegisterPin={async (empId, newPin) => {
-                return await handleBindDeviceSuccess(empId, newPin);
-              }}
-            />
-          </section>
+          {/* Layout en 2 columnas (PC) o vertical (Móvil) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
+            <section className="lg:col-span-8 w-full" aria-label="Terminal de Marcación">
+              <KioskMode
+                employees={employees}
+                attendances={attendances}
+                schedules={schedules}
+                onPunch={handlePunch}
+                onRegisterPin={async (empId, newPin) => {
+                  return await handleBindDeviceSuccess(empId, newPin);
+                }}
+              />
+            </section>
 
-          <section className="lg:col-span-4 w-full" aria-label="Historial del Día">
-            <div className="lg:sticky lg:top-24">
-              <TodayFeed attendances={attendances} employees={employees} />
-            </div>
-          </section>
-        </div>
-      </main>
+            <section className="lg:col-span-4 w-full" aria-label="Historial del Día">
+              <div className="lg:sticky lg:top-24">
+                <TodayFeed attendances={attendances} employees={employees} />
+              </div>
+            </section>
+          </div>
+        </main>
+      )}
 
       {/* Modal para Vincular Dispositivo por Primera Vez */}
       {bindingCandidate && (
@@ -815,6 +1002,8 @@ export default function AttendanceHomePage() {
         onSaveConfig={handleSaveConfig}
         onTriggerAutoCheckout={handleTriggerAutoCheckout}
         onTriggerTelegramReport={handleTriggerTelegramReport}
+        onUpdateAttendance={handleUpdateAttendance}
+        onDeleteAttendance={handleDeleteAttendance}
         isSupabaseConnected={isConnected}
       />
     </div>
