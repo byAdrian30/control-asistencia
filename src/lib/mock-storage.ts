@@ -244,7 +244,7 @@ export const INITIAL_SCHEDULES: Schedule[] = [
 
 export const DEFAULT_CONFIG: SystemConfig = {
   store_name: 'Shimaya Ramen - Mall Aventura Chiclayo',
-  admin_pin: '1234',
+  admin_pin: '1907',
   telegram_bot_token: '8941568069:AAEeg9DZhP54X8XP-ZGjcKLYnbVhAOKYs80',
   telegram_chat_id: '8657890692',
   auto_checkout_hour: 1,

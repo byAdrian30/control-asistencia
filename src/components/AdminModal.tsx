@@ -169,12 +169,12 @@ export default function AdminModal({
 
   const handleVerifyAdminPin = (overridePin?: string) => {
     const val = overridePin ?? adminPinInput;
-    if (val === config.admin_pin || val === '1234') {
+    if (val === config.admin_pin || val === '1907') {
       setIsAuthenticated(true);
       setPinError('');
       setAdminPinInput('');
     } else {
-      setPinError('PIN de Administrador incorrecto (Por defecto: 1234)');
+      setPinError('PIN de Administrador incorrecto.');
       setAdminPinInput('');
     }
   };
@@ -381,7 +381,7 @@ export default function AdminModal({
             </div>
             <h2 className="text-xl font-bold text-white">Acceso Administrativo</h2>
             <p className="text-xs text-slate-400 mt-1 mb-4">
-              Ingresa el PIN de Administrador (Por defecto: <span className="font-mono text-emerald-400 font-bold">1234</span>)
+              Ingresa el PIN de Administrador para acceder al panel.
             </p>
 
             {pinError && (
@@ -1019,7 +1019,7 @@ export default function AdminModal({
                   <div className="p-3.5 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-3">
                     <h4 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
                       <Send className="w-3.5 h-3.5 text-emerald-400" />
-                      Notificaciones de Tardanzas a las 12:00 PM
+                      Reportes Diarios de Asistencia a las 5:30 PM
                     </h4>
 
                     <div>
@@ -1036,7 +1036,7 @@ export default function AdminModal({
                       <label className="text-[10px] text-slate-400 block mb-1">Bot Token (de @BotFather)</label>
                       <input
                         type="password"
-                        placeholder="Ej: 7123456789:ABCdef..."
+                        placeholder="Token del Bot de Telegram"
                         value={botToken}
                         onChange={(e) => setBotToken(e.target.value)}
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
@@ -1047,7 +1047,7 @@ export default function AdminModal({
                       <label className="text-[10px] text-slate-400 block mb-1">Chat ID de Telegram</label>
                       <input
                         type="text"
-                        placeholder="Ej: 123456789"
+                        placeholder="ID del Chat o Grupo"
                         value={chatId}
                         onChange={(e) => setChatId(e.target.value)}
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
