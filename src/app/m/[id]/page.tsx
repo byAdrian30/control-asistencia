@@ -125,9 +125,14 @@ function PersonalPunchContent({ params }: PageProps) {
         if (res.ok) {
           const cloudState = await res.json();
           if (cloudState && Array.isArray(cloudState.employees)) {
-            const cleanEmps: Employee[] = cloudState.employees.filter(
-              (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
-            );
+            const cleanEmps: Employee[] = cloudState.employees
+              .filter(
+                (e: Employee) => e.id !== 'emp-cocina-1' && e.id !== 'emp-salon-1' && e.id !== 'emp-salon-8'
+              )
+              .map((e: Employee) => ({
+                ...e,
+                role: e.role ? e.role.replace(/jugueter[ií]a/gi, 'Juguería') : e.role,
+              }));
             saveLocalEmployees(cleanEmps);
 
             const updatedTarget = cleanEmps.find(

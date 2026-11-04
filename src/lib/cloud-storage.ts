@@ -109,9 +109,14 @@ export async function getCloudFullState(): Promise<FullStoreState> {
       } catch {}
     }
 
-    // Limpieza de seguridad permanente: jamás incluir a Adrian, Alexander o Raquel
+    // Limpieza de seguridad permanente: jamás incluir a Adrian, Alexander o Raquel, y normalizar Juguería
     const isExclId = (id: string) => id === 'emp-cocina-1' || id === 'emp-salon-1' || id === 'emp-salon-8';
-    employees = employees.filter((e) => !isExclId(e.id) && !e.name?.toLowerCase().includes('raquel'));
+    employees = employees
+      .filter((e) => !isExclId(e.id) && !e.name?.toLowerCase().includes('raquel'))
+      .map((e) => ({
+        ...e,
+        role: e.role ? e.role.replace(/jugueter[ií]a/gi, 'Juguería') : e.role,
+      }));
     schedules = schedules.filter((s) => !isExclId(s.employee_id));
     attendances = attendances.filter((a) => !isExclId(a.employee_id));
 
@@ -146,9 +151,13 @@ export async function saveCloudFullState(
   const isExclId = (id: string) => id === 'emp-cocina-1' || id === 'emp-salon-1' || id === 'emp-salon-8';
 
   const nextState: FullStoreState = {
-    employees: updates.employees
+    employees: (updates.employees
       ? updates.employees.filter((e) => !isExclId(e.id) && !e.name?.toLowerCase().includes('raquel'))
-      : current.employees.filter((e) => !isExclId(e.id) && !e.name?.toLowerCase().includes('raquel')),
+      : current.employees.filter((e) => !isExclId(e.id) && !e.name?.toLowerCase().includes('raquel'))
+    ).map((e) => ({
+      ...e,
+      role: e.role ? e.role.replace(/jugueter[ií]a/gi, 'Juguería') : e.role,
+    })),
     schedules: updates.schedules
       ? updates.schedules.filter((s) => !isExclId(s.employee_id))
       : current.schedules.filter((s) => !isExclId(s.employee_id)),

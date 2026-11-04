@@ -93,13 +93,23 @@ export default function AttendanceHomePage() {
     };
 
     const sanitizeEmps = (list: Employee[]) =>
-      list.filter(
-        (e: Employee) =>
-          e.id !== 'emp-cocina-1' &&
-          e.id !== 'emp-salon-1' &&
-          e.id !== 'emp-salon-8' &&
-          !e.name?.toLowerCase().includes('raquel')
-      );
+      list
+        .filter(
+          (e: Employee) =>
+            e.id !== 'emp-cocina-1' &&
+            e.id !== 'emp-salon-1' &&
+            e.id !== 'emp-salon-8' &&
+            !e.name?.toLowerCase().includes('raquel')
+        )
+        .map((e: Employee) => {
+          if (e.role && /juguet/i.test(e.role)) {
+            return {
+              ...e,
+              role: e.role.replace(/jugueter[ií]a/gi, 'Juguería'),
+            };
+          }
+          return e;
+        });
 
     // 1. Cargar estado local inmediato para evitar parpadeos
     let loadedEmps = sanitizeEmps(getLocalEmployees());
